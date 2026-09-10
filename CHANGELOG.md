@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.6.0a14
+
+- Mantiene intacto el detector estable por bloque y corrige las celdas con wrap únicamente como una fase posterior de augmentación.
+- Los bloques sin `ORDE`/`NIA` situados inmediatamente después de una fila y antes de la siguiente pueden completar `COGNOMS I NOM`, `REPETIX` y `MATÈRIA`/`MÒDUL`.
+- Una nueva ancla `ORDE`+`NIA` siempre actúa como frontera, aunque esa fila no haya podido parsearse, evitando arrastrar contenido entre alumnos.
+- La asociación de continuaciones exige además proximidad visual a la fila base; no se vuelve a segmentar globalmente la página como en 0.6.0a12.
+- Añade pruebas basadas en las geometrías anonimizadas observadas para overflow de nombre, overflow de materias y protección frente a filas intermedias no parseables.
+
+## 0.6.0a13
+
+- Revierte la reconstrucción global de filas lógicas introducida en 0.6.0a12, que podía omitir alumnos en formatos antes válidos.
+- Recupera como base el detector estable por bloque de 0.6.0a11, manteniendo soporte de MÒDUL, exportación opcional y diagnóstico anonimizado.
+- Mantiene `layout-report` para analizar de forma segura los casos de celdas desbordadas antes de reintroducir una solución acotada.
+
+## 0.6.0a12
+
+- Introdujo una reconstrucción global de filas lógicas para celdas desbordadas de `COGNOMS I NOM` o `MATÈRIA`/`MÒDUL`.
+- Recuperaba `REPETIX` y concatenaba continuaciones, pero podía omitir alumnos en algunos formatos previamente válidos.
+- Esta estrategia fue revertida en 0.6.0a13 y sustituida en 0.6.0a14 por una augmentación conservadora sobre el detector estable.
+
+## 0.6.0a11
+
+- Mantiene la firma alternativa de FP (`ORDE`, `NIA`, `COGNOMS I NOM`, `MÒDUL`).
+- Revierte el intento especulativo de reconstrucción de nombres partidos de 0.6.0a10 para volver a la base estable anterior.
+- Añade temporalmente `itaca-idoceo layout-report`, un informe geométrico anonimizado para estudiar celdas partidas sin compartir datos personales.
+
+## 0.6.0a10
+
+- La firma de ITACA 3 acepta también la cabecera observada en FP: `ORDE | NIA | COGNOMS I NOM | MÒDUL`.
+- Los nombres largos partidos visualmente en varias líneas se reconstruyen antes de separar apellidos y nombre.
+- La continuación de un nombre ya no puede confundirse con `REPETIX` ni con `MATÈRIA`/`MÒDUL`, por lo que las columnas opcionales se conservan en esas filas.
+
+## 0.6.0a9
+
+- El área principal permite elegir tanto uno o varios PDF como una carpeta también cuando el drag-and-drop no está disponible; al hacer clic muestra ambas opciones junto al propio área.
+- Las opciones de exportación pasan a estar visibles en la ventana principal para que no dependan de descubrir el menú de la aplicación.
+- Se añaden opciones independientes para exportar `NIA`, `REPETIX` y `MATÈRIA`.
+- `REPETIX` y `MATÈRIA` se extraen de la misma fila estructural de cada alumno y se conservan sólo cuando el usuario decide incluirlas en el XLSX.
+- La CLI incorpora `--include-repetix` y `--include-materia` tanto en `extract` como en `batch`.
+- Se mantienen `REPETIX` y `MATÈRIA` fuera del diagnóstico anonimizado.
+
 ## 0.6.0a8
 
 - Renombra el proyecto/distribución a `itaca-idoceo`, el paquete Python a `itaca_idoceo` y el comando principal a `itaca-idoceo`, evitando confundir el antiguo `2` con ITACA 2/MD2.

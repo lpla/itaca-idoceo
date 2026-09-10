@@ -13,7 +13,7 @@ from pathlib import Path
 import pymupdf
 
 
-SCRIPT_VERSION = "0.6.0a8"
+SCRIPT_VERSION = "0.6.0a14"
 
 
 # ===========================================================================
@@ -85,6 +85,8 @@ class Student:
     given_names: str
     row_x: float
     visual_y: float
+    repetix: str = ""
+    materia: str = ""
 
 
 @dataclass
@@ -359,10 +361,239 @@ def get_visual_y(page, row_x: float) -> float:
     return row_x
 
 
+def visual_line_bounds(page, line: TextLine) -> tuple[float, float]:
+    """Devuelve los límites horizontales de una línea en coordenadas visuales."""
+    rects = [
+        pymupdf.Rect(word.x0, word.y0, word.x1, word.y1) * page.rotation_matrix
+        for word in line.words
+    ]
+    return min(rect.x0 for rect in rects), max(rect.x1 for rect in rects)
+
+
+def extract_optional_student_fields(
+    page,
+    lines: list[TextLine],
+    ordinal_line: TextLine,
+    nia_line: TextLine,
+    name_line: TextLine,
+) -> tuple[str, str]:
+    """Extrae REPETIX y MATÈRIA de las demás columnas de la fila del alumno.
+
+    ITACA 3 construye cada fila como un bloque de texto con una línea por
+    columna. Trabajamos en coordenadas visuales para no depender de la
+    rotación interna de 90° del PDF. REPETIX queda entre NIA y COGNOMS I NOM;
+    MATÈRIA queda a la derecha del nombre.
+    """
+    excluded = {id(ordinal_line), id(nia_line), id(name_line)}
+    nia_x0, nia_x1 = visual_line_bounds(page, nia_line)
+    name_x0, name_x1 = visual_line_bounds(page, name_line)
+    nia_center = (nia_x0 + nia_x1) / 2.0
+    name_center = (name_x0 + name_x1) / 2.0
+
+    remaining: list[tuple[float, float, TextLine]] = []
+    for line in lines:
+        if id(line) in excluded or not line.text.strip():
+            continue
+        x0, x1 = visual_line_bounds(page, line)
+        remaining.append((x0, x1, line))
+
+    repetix = ""
+    repeat_candidates = [
+        (x0, x1, line)
+        for x0, x1, line in remaining
+        if nia_center < (x0 + x1) / 2.0 < name_center
+    ]
+    # El formato conocido utiliza R o celda vacía. Si en el futuro ITACA
+    # introduce otro marcador, preservamos igualmente un valor corto ubicado
+    # inequívocamente en esa columna.
+    if repeat_candidates:
+        repeat_candidates.sort(key=lambda item: abs(((item[0] + item[1]) / 2.0) - ((nia_center + name_center) / 2.0)))
+        candidate = clean_spaces(repeat_candidates[0][2].text)
+        if len(candidate) <= 4:
+            repetix = candidate
+
+    materia_candidates = [
+        (x0, x1, line)
+        for x0, x1, line in remaining
+        if (x0 + x1) / 2.0 > name_center
+        and line is not (repeat_candidates[0][2] if repeat_candidates else None)
+    ]
+    materia_candidates.sort(key=lambda item: item[0])
+    materia = clean_spaces(" ".join(item[2].text for item in materia_candidates))
+
+    return repetix, materia
+
+
+def visual_line_vertical_bounds(page, line: TextLine) -> tuple[float, float]:
+    """Devuelve los límites verticales de una línea en coordenadas visuales."""
+    rects = [
+        pymupdf.Rect(word.x0, word.y0, word.x1, word.y1) * page.rotation_matrix
+        for word in line.words
+    ]
+    return min(rect.y0 for rect in rects), max(rect.y1 for rect in rects)
+
+
+def visual_line_center_y(page, line: TextLine) -> float:
+    y0, y1 = visual_line_vertical_bounds(page, line)
+    return (y0 + y1) / 2.0
+
+
+def _continuation_parts(
+    page,
+    lines: list[TextLine],
+    height: float,
+) -> tuple[list[str], str, list[str]]:
+    """Clasifica únicamente líneas de un bloque de continuación.
+
+    Los PDFs observados de ITACA 3 pueden crear un bloque de texto adicional
+    cuando una celda hace wrap. No reinterpretamos las filas normales: este
+    helper sólo se aplica a bloques *sin* ORDE/NIA situados entre dos bloques
+    de alumnado ya detectados por el algoritmo estable.
+    """
+    name_parts: list[tuple[float, str]] = []
+    materia_parts: list[tuple[float, str]] = []
+    repetix = ""
+
+    for line in lines:
+        text = clean_spaces(line.text)
+        if not text:
+            continue
+        fraction = line.y0 / height
+        visual_y = visual_line_center_y(page, line)
+
+        if 0.45 <= fraction <= 0.80:
+            # Si la primera parte ya permitió detectar al alumno, cualquier
+            # continuación de esta columna aparece después de la coma y, por
+            # tanto, amplía el/los nombres de pila.
+            tokens = [token for token in text.split() if token]
+            if tokens and all(is_name_component(token) for token in tokens):
+                name_parts.append((visual_y, text))
+        elif 0.80 < fraction < 0.84:
+            # Formato observado: R o celda vacía. Ser estrictos evita tomar
+            # texto de otro elemento cercano como REPETIX.
+            if text.upper() == "R":
+                repetix = text
+        elif 0.00 <= fraction < 0.45:
+            materia_parts.append((visual_y, text))
+
+    name_parts.sort(key=lambda item: item[0])
+    materia_parts.sort(key=lambda item: item[0])
+    return (
+        [text for _, text in name_parts],
+        repetix,
+        [text for _, text in materia_parts],
+    )
+
+
+def _augment_wrapped_rows(
+    page,
+    blocks: dict[int, list[TextLine]],
+    students: list[Student],
+    anchor_y_by_block: dict[int, float],
+    height: float,
+) -> None:
+    """Añade continuaciones de celdas sin tocar la detección base.
+
+    Evidencia observada en PDFs reales: cuando COGNOMS I NOM o
+    MATÈRIA/MÒDUL desbordan, PyMuPDF crea uno o más bloques inmediatamente
+    después del bloque principal de esa fila y antes del siguiente bloque con
+    ORDE/NIA. Esos bloques carecen de ancla propia.
+
+    Para evitar las regresiones de la estrategia de "fila lógica" global, se
+    preserva íntegramente el detector histórico. Sólo se consideran bloques
+    huérfanos que (1) estén entre dos bloques de alumnado consecutivos en el
+    orden PDF y (2) estén visualmente muy cerca de la fila anterior.
+    """
+    if not students:
+        return
+
+    # Detectar todos los bloques que tienen una ancla ORDE+NIA, incluso si por
+    # alguna razón su nombre no fuese parseable. Nunca deben ser absorbidos
+    # como continuación de otra fila.
+    anchor_blocks: set[int] = set()
+    for block, lines in blocks.items():
+        if (
+            find_numeric_line(lines, 0.92, 0.99, height) is not None
+            and find_numeric_line(lines, 0.84, 0.92, height) is not None
+        ):
+            anchor_blocks.add(block)
+
+    students_by_visual = sorted(students, key=lambda student: student.visual_y)
+    student_index_by_block = {student.block: i for i, student in enumerate(students_by_visual)}
+
+    for student in students_by_visual:
+        index = student_index_by_block[student.block]
+        anchor_y = anchor_y_by_block.get(student.block, student.visual_y)
+
+        prev_y = (
+            anchor_y_by_block.get(students_by_visual[index - 1].block)
+            if index > 0 else None
+        )
+        next_student = students_by_visual[index + 1] if index + 1 < len(students_by_visual) else None
+        next_y = anchor_y_by_block.get(next_student.block) if next_student else None
+
+        gaps = [abs(anchor_y - y) for y in (prev_y, next_y) if y is not None and abs(anchor_y-y) > 0.1]
+        # Un bloque de continuación observado queda a pocos píxeles del ancla.
+        # El 45 % de la menor separación entre filas lo mantiene inequívocamente
+        # del lado de su fila; el suelo de 5 px tolera pequeñas variaciones.
+        max_distance = min(12.0, max(5.0, (min(gaps) * 0.45) if gaps else 8.0))
+
+        # En los ejemplos reales el bloque de continuación aparece después del
+        # bloque principal y antes del siguiente bloque de alumno. Si los ids no
+        # son crecientes (PDF exótico), no hacemos ninguna inferencia.
+        if next_student is not None and next_student.block > student.block:
+            candidate_ids = range(student.block + 1, next_student.block)
+        elif next_student is None:
+            candidate_ids = range(student.block + 1, student.block + 4)
+        else:
+            candidate_ids = range(0)
+
+        for block_id in candidate_ids:
+            if block_id in anchor_blocks:
+                # Un ORDE+NIA siempre delimita una nueva fila, aunque esa fila
+                # no haya podido convertirse en Student. No cruzamos nunca
+                # esa frontera buscando continuaciones.
+                break
+            lines = blocks.get(block_id)
+            if not lines:
+                continue
+
+            centers = [visual_line_center_y(page, line) for line in lines if line.words]
+            if not centers:
+                continue
+            block_center = (min(centers) + max(centers)) / 2.0
+            if abs(block_center - anchor_y) > max_distance:
+                continue
+
+            name_parts, repetix, materia_parts = _continuation_parts(page, lines, height)
+            if not name_parts and not repetix and not materia_parts:
+                continue
+
+            if name_parts:
+                extra_given_names = clean_spaces(" ".join(name_parts))
+                if extra_given_names:
+                    student.given_names = clean_spaces(
+                        f"{student.given_names} {extra_given_names}"
+                    )
+                    student.full_name = f"{student.surnames}, {student.given_names}"
+
+            if repetix and not student.repetix:
+                student.repetix = repetix
+
+            if materia_parts:
+                extra_materia = clean_spaces(" ".join(materia_parts))
+                if extra_materia:
+                    student.materia = clean_spaces(
+                        f"{student.materia} {extra_materia}"
+                    )
+
+
 def detect_students(page, page_number: int) -> list[Student]:
+    """Detector estable por bloques, con augmentación conservadora de wrap."""
     height = raw_page_height(page)
     blocks = extract_lines(page)
     students: list[Student] = []
+    anchor_y_by_block: dict[int, float] = {}
 
     for block, lines in blocks.items():
         ordinal_line = find_numeric_line(lines, 0.92, 0.99, height)
@@ -378,7 +609,11 @@ def detect_students(page, page_number: int) -> list[Student]:
         except ValueError:
             continue
 
+        repetix, materia = extract_optional_student_fields(
+            page, lines, ordinal_line, nia_line, name_line
+        )
         row_x = name_line.x0
+        anchor_y_by_block[block] = visual_line_center_y(page, ordinal_line)
         students.append(
             Student(
                 page=page_number,
@@ -390,10 +625,13 @@ def detect_students(page, page_number: int) -> list[Student]:
                 given_names=given_names,
                 row_x=row_x,
                 visual_y=get_visual_y(page, row_x),
+                repetix=repetix,
+                materia=materia,
             )
         )
 
     students.sort(key=lambda student: student.visual_y)
+    _augment_wrapped_rows(page, blocks, students, anchor_y_by_block, height)
     return students
 
 
@@ -430,6 +668,13 @@ REPORT_SIGNATURE_HEADERS = (
     "MATÈRIA",
 )
 
+FP_REPORT_SIGNATURE_HEADERS = (
+    "ORDE",
+    "NIA",
+    "COGNOMS I NOM",
+    "MÒDUL",
+)
+
 
 def normalize_header_token(text: str) -> str:
     """Normaliza un token de cabecera para compararlo sin acentos/puntuación."""
@@ -439,7 +684,14 @@ def normalize_header_token(text: str) -> str:
 
 
 def has_itaca3_report_signature(words: list[VisualWord]) -> bool:
-    """Detecta la fila de cinco cabeceras del listado soportado de ITACA 3."""
+    """Detecta cualquiera de las cabeceras conocidas del listado ITACA 3.
+
+    Formato general:
+      ORDE | NIA | REPETIX | COGNOMS I NOM | MATÈRIA
+
+    Formato de FP observado:
+      ORDE | NIA | COGNOMS I NOM | MÒDUL
+    """
     for orde in words:
         if normalize_header_token(orde.text) != "ORDE":
             continue
@@ -454,11 +706,15 @@ def has_itaca3_report_signature(words: list[VisualWord]) -> bool:
         token_set = set(tokens)
         compact = "".join(tokens)
 
-        if not {"ORDE", "NIA", "REPETIX", "MATERIA"}.issubset(token_set):
+        if not {"ORDE", "NIA"}.issubset(token_set):
             continue
         if "COGNOMSINOM" not in compact:
             continue
-        return True
+
+        general = {"REPETIX", "MATERIA"}.issubset(token_set)
+        fp = "MODUL" in token_set
+        if general or fp:
+            return True
 
     return False
 
@@ -865,8 +1121,8 @@ def process_pdf(pdf_path: Path) -> PdfResult:
 
         if not report_signature:
             issues.append(
-                "No se ha detectado la cabecera completa del listado soportado de "
-                "ITACA 3 (ORDE, NIA, REPETIX, COGNOMS I NOM, MATÈRIA)"
+                "No se ha detectado una cabecera compatible del listado soportado de "
+                "ITACA 3 (formato general con MATÈRIA o formato FP con MÒDUL)"
             )
 
         if not assigned:
@@ -946,7 +1202,9 @@ def unique_output_path(output_dir: Path, base_name: str) -> Path:
 def write_idoceo_xlsx(
     result: ClassResult,
     output_path: Path,
-    include_nia: bool,
+    include_nia: bool = False,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> None:
     try:
         from openpyxl import Workbook
@@ -963,12 +1221,20 @@ def write_idoceo_xlsx(
     headers = ["Apellidos", "Nombre"]
     if include_nia:
         headers.append("NIA")
+    if include_repetix:
+        headers.append("REPETIX")
+    if include_materia:
+        headers.append("MATÈRIA")
     sheet.append(headers)
 
     for student in result.students:
         row = [student.surnames, student.given_names]
         if include_nia:
             row.append(student.nia)
+        if include_repetix:
+            row.append(student.repetix)
+        if include_materia:
+            row.append(student.materia)
         sheet.append(row)
 
     for cell in sheet[1]:
@@ -977,8 +1243,15 @@ def write_idoceo_xlsx(
     sheet.freeze_panes = "A2"
     sheet.column_dimensions["A"].width = 34
     sheet.column_dimensions["B"].width = 26
+    next_column = 3
     if include_nia:
-        sheet.column_dimensions["C"].width = 16
+        sheet.column_dimensions[chr(64 + next_column)].width = 16
+        next_column += 1
+    if include_repetix:
+        sheet.column_dimensions[chr(64 + next_column)].width = 12
+        next_column += 1
+    if include_materia:
+        sheet.column_dimensions[chr(64 + next_column)].width = 45
 
     workbook.save(output_path)
 
@@ -1040,11 +1313,13 @@ def _write_class_file(
     cls: ClassResult,
     output_dir: Path,
     include_nia: bool,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> Path:
     group = cls.metadata.group_code or cls.source.stem
     base = safe_filename_component(group) + "_idoceo"
     output_path = unique_output_path(output_dir, base)
-    write_idoceo_xlsx(cls, output_path, include_nia)
+    write_idoceo_xlsx(cls, output_path, include_nia, include_repetix, include_materia)
     return output_path
 
 
@@ -1052,6 +1327,8 @@ def extract_one(
     pdf_path: Path,
     output_path: Path | None,
     include_nia: bool,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> int:
     try:
         result = process_pdf(pdf_path)
@@ -1074,12 +1351,12 @@ def extract_one(
                     safe_filename_component(group) + "_idoceo.xlsx"
                 )
             elif output_path.exists() and output_path.is_dir():
-                output_path = _write_class_file(cls, output_path, include_nia)
+                output_path = _write_class_file(cls, output_path, include_nia, include_repetix, include_materia)
                 created.append(output_path)
                 output_path = None
 
             if output_path is not None:
-                write_idoceo_xlsx(cls, output_path, include_nia)
+                write_idoceo_xlsx(cls, output_path, include_nia, include_repetix, include_materia)
                 created.append(output_path)
         else:
             if output_path is not None and output_path.suffix.casefold() == ".xlsx":
@@ -1093,7 +1370,7 @@ def extract_one(
             output_dir = output_path or (pdf_path.parent / "iDoceo")
             output_dir.mkdir(parents=True, exist_ok=True)
             for cls in result.classes:
-                created.append(_write_class_file(cls, output_dir, include_nia))
+                created.append(_write_class_file(cls, output_dir, include_nia, include_repetix, include_materia))
 
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -1102,6 +1379,8 @@ def extract_one(
     print_result_check(result)
     print()
     print("NIA exportado: " + ("SÍ" if include_nia else "NO"))
+    print("REPETIX exportado: " + ("SÍ" if include_repetix else "NO"))
+    print("MATÈRIA exportada: " + ("SÍ" if include_materia else "NO"))
     for path in created:
         print(f"XLSX: {path}")
     return 0
@@ -1119,6 +1398,8 @@ def write_manifest(
     output_dir: Path,
     rows: list[dict[str, str]],
     include_nia: bool,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> Path:
     manifest_path = output_dir / "idoceo_manifest.txt"
     lines = [
@@ -1127,6 +1408,8 @@ def write_manifest(
         "",
         f"Clases procesadas: {len(rows)}",
         f"NIA incluido en XLSX: {'SÍ' if include_nia else 'NO'}",
+        f"REPETIX incluido en XLSX: {'SÍ' if include_repetix else 'NO'}",
+        f"MATÈRIA incluida en XLSX: {'SÍ' if include_materia else 'NO'}",
         "",
     ]
     for row in rows:
@@ -1150,6 +1433,8 @@ def batch_extract(
     output_dir: Path | None,
     recursive: bool,
     include_nia: bool,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> int:
     if not input_dir.is_dir():
         print(f"ERROR: no es una carpeta: {input_dir}", file=sys.stderr)
@@ -1178,7 +1463,7 @@ def batch_extract(
                 group = cls.metadata.group_code or pdf_path.stem
                 group_key = group.casefold()
                 seen_groups[group_key] += 1
-                output_path = _write_class_file(cls, output_dir, include_nia)
+                output_path = _write_class_file(cls, output_dir, include_nia, include_repetix, include_materia)
 
                 notes = list(result.issues) + list(cls.issues)
                 if seen_groups[group_key] > 1:
@@ -1205,7 +1490,7 @@ def batch_extract(
             print(f"ERROR  {pdf_path.name}: {exc}", file=sys.stderr)
             failures += 1
 
-    manifest = write_manifest(output_dir, rows, include_nia)
+    manifest = write_manifest(output_dir, rows, include_nia, include_repetix, include_materia)
     print()
     print(f"PDF encontrados: {len(pdfs)}")
     print(f"XLSX generados: {generated}")

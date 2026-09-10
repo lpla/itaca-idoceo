@@ -42,6 +42,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Incluye NIA para mapearlo al campo ID/Student ID de iDoceo.",
     )
+    extract.add_argument(
+        "--include-repetix",
+        action="store_true",
+        help="Incluye la columna REPETIX tal como aparece en ITACA.",
+    )
+    extract.add_argument(
+        "--include-materia",
+        action="store_true",
+        help="Incluye la columna MATÈRIA tal como aparece en ITACA.",
+    )
 
     batch = subparsers.add_parser(
         "batch",
@@ -51,6 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("-o", "--output-dir", type=Path, default=None)
     batch.add_argument("-r", "--recursive", action="store_true")
     batch.add_argument("--include-nia", action="store_true")
+    batch.add_argument("--include-repetix", action="store_true")
+    batch.add_argument("--include-materia", action="store_true")
 
     integrate = subparsers.add_parser(
         "integrate",
@@ -65,6 +77,25 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "uninstall-integration",
         help="Elimina los accesos gráficos creados por 'integrate'.",
+    )
+
+    layout = subparsers.add_parser(
+        "layout-report",
+        help="Genera un informe geométrico anonimizado para depurar formatos PDF.",
+    )
+    layout.add_argument("pdf", type=Path)
+    layout.add_argument(
+        "--orde",
+        type=int,
+        action="append",
+        default=None,
+        help="Limita el informe a una o varias filas ORDE (se puede repetir).",
+    )
+    layout.add_argument(
+        "-o", "--output",
+        type=Path,
+        default=None,
+        help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
     )
 
     return parser
@@ -110,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
             pdf_path=args.pdf,
             output_path=args.output,
             include_nia=args.include_nia,
+            include_repetix=args.include_repetix,
+            include_materia=args.include_materia,
         )
 
     if args.command == "batch":
@@ -118,6 +151,8 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             recursive=args.recursive,
             include_nia=args.include_nia,
+            include_repetix=args.include_repetix,
+            include_materia=args.include_materia,
         )
 
     if args.command == "integrate":
@@ -137,6 +172,21 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Eliminado: {item}")
         else:
             print("No se encontró ninguna integración creada por la herramienta.")
+        return 0
+
+    if args.command == "layout-report":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        from .layout_debug import build_layout_report
+        report = build_layout_report(
+            args.pdf,
+            only_ordinals=set(args.orde) if args.orde else None,
+        )
+        if args.output is None:
+            print(report, end="")
+        else:
+            args.output.write_text(report, encoding="utf-8")
+            print(f"Informe anonimizado guardado en: {args.output}")
         return 0
 
     parser.error("comando no reconocido")

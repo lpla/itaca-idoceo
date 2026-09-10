@@ -54,6 +54,8 @@ class ItacaIdoceoApp(tk.Tk):
         self.row_map: dict[str, tuple[Path, int | None]] = {}
         self.last_output_dir: Path | None = None
         self.include_nia = tk.BooleanVar(value=False)
+        self.include_repetix = tk.BooleanVar(value=False)
+        self.include_materia = tk.BooleanVar(value=False)
         self.status_text = tk.StringVar(value=self._empty_status_text())
 
         self._build_ui()
@@ -76,7 +78,7 @@ class ItacaIdoceoApp(tk.Tk):
         return (
             "Arrastra o haz clic para añadir listados de ITACA."
             if self.dnd_available
-            else "Haz clic en el área superior para añadir listados de ITACA."
+            else "Haz clic en el área superior para añadir PDF o una carpeta."
         )
 
     def _dnd_technical_text(self) -> str:
@@ -123,13 +125,10 @@ class ItacaIdoceoApp(tk.Tk):
         if self.dnd_available:
             drop_text = (
                 "ARRASTRA AQUÍ PDF O UNA CARPETA\n"
-                "o haz clic para seleccionar uno o varios PDF"
+                "o haz clic para elegir PDF o carpeta"
             )
         else:
-            drop_text = (
-                "HAZ CLIC AQUÍ PARA SELECCIONAR UNO O VARIOS PDF\n"
-                "Carpeta completa: menú Archivo → Añadir carpeta…"
-            )
+            drop_text = "HAZ CLIC AQUÍ PARA AÑADIR PDF O UNA CARPETA"
 
         self.drop_area = tk.Label(
             outer,
@@ -147,9 +146,32 @@ class ItacaIdoceoApp(tk.Tk):
             self.drop_area.drop_target_register(DND_FILES)
             self.drop_area.dnd_bind("<<Drop>>", self._on_drop)
 
-        self.drop_area.bind("<Button-1>", lambda _event: self.choose_pdfs())
-        self.drop_area.bind("<Return>", lambda _event: self.choose_pdfs())
+        self.drop_area.bind("<Button-1>", self._show_add_menu)
+        self.drop_area.bind("<Return>", lambda _event: self._show_add_menu())
         self.drop_area.configure(takefocus=True)
+
+        self.add_menu = tk.Menu(self, tearoff=False)
+        self.add_menu.add_command(label="Uno o varios PDF…", command=self.choose_pdfs)
+        self.add_menu.add_command(label="Una carpeta…", command=self.choose_folder)
+
+        export_options = ttk.Frame(outer)
+        export_options.pack(fill="x", pady=(0, 10))
+        ttk.Label(export_options, text="Datos opcionales en el XLSX:").pack(side="left")
+        ttk.Checkbutton(
+            export_options,
+            text="NIA (ID del estudiante)",
+            variable=self.include_nia,
+        ).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(
+            export_options,
+            text="REPETIX",
+            variable=self.include_repetix,
+        ).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(
+            export_options,
+            text="MATÈRIA / MÒDUL",
+            variable=self.include_materia,
+        ).pack(side="left", padx=(12, 0))
 
         tree_frame = ttk.Frame(outer)
         tree_frame.pack(fill="both", expand=True)
@@ -224,13 +246,6 @@ class ItacaIdoceoApp(tk.Tk):
         file_menu.add_command(label="Salir", command=self.destroy)
         menubar.add_cascade(label="Archivo", menu=file_menu)
 
-        options_menu = tk.Menu(menubar, tearoff=False)
-        options_menu.add_checkbutton(
-            label="Incluir NIA como ID del estudiante",
-            variable=self.include_nia,
-        )
-        menubar.add_cascade(label="Opciones", menu=options_menu)
-
         help_menu = tk.Menu(menubar, tearoff=False)
         help_menu.add_command(label="Cómo importar en iDoceo…", command=self.show_import_help)
         help_menu.add_separator()
@@ -244,6 +259,20 @@ class ItacaIdoceoApp(tk.Tk):
         self.configure(menu=menubar)
 
     # ---------------------------------------------------------- Entrada/DnD
+
+    def _show_add_menu(self, event=None) -> str:
+        """Muestra junto al área principal las dos fuentes posibles de entrada."""
+        if event is not None:
+            x = event.x_root
+            y = event.y_root
+        else:
+            x = self.drop_area.winfo_rootx() + self.drop_area.winfo_width() // 2
+            y = self.drop_area.winfo_rooty() + self.drop_area.winfo_height() // 2
+        try:
+            self.add_menu.tk_popup(x, y)
+        finally:
+            self.add_menu.grab_release()
+        return "break"
 
     def _on_drop(self, event) -> str:
         try:
@@ -510,8 +539,10 @@ class ItacaIdoceoApp(tk.Tk):
                 "1. Selecciona la primera fila como cabecera.\n"
                 "2. En la composición del nombre, asigna Nombre y Apellidos.\n"
                 "3. Si has incluido el NIA, asígnalo a ID / Student ID.\n"
-                "4. Comprueba que no haya columnas no deseadas seleccionadas como datos del cuaderno.\n"
-                "5. Crea una clase nueva o añade los alumnos a una existente."
+                "4. Si incluyes REPETIX o MATÈRIA / MÒDUL, decide explícitamente dónde quieres importarlos; "
+                "no los dejes seleccionados accidentalmente como columnas de notas.\n"
+                "5. Comprueba que no haya columnas no deseadas seleccionadas como datos del cuaderno.\n"
+                "6. Crea una clase nueva o añade los alumnos a una existente."
             ),
             parent=self,
         )
@@ -613,7 +644,13 @@ class ItacaIdoceoApp(tk.Tk):
                     safe_filename_component(group) + "_idoceo",
                 )
                 try:
-                    write_idoceo_xlsx(cls, output_path, self.include_nia.get())
+                    write_idoceo_xlsx(
+                        cls,
+                        output_path,
+                        self.include_nia.get(),
+                        self.include_repetix.get(),
+                        self.include_materia.get(),
+                    )
                     created.append(output_path)
                 except Exception as exc:
                     failures.append(f"{pdf.name} [{group}]: {exc}")

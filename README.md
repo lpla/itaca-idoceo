@@ -7,12 +7,13 @@ Convierte **localmente** listados PDF de alumnado de ITACA (Generalitat Valencia
 
 ## Compatibilidad actual
 
-La versión **0.6.0a8** es una alpha y ha sido validada con listados reales **«LLISTAT D'ALUMNES AMB ASSIGNATURES» generados desde ITACA 3 / Gestión Administrativa**, incluidos casos de ESO, Bachillerato y FP.
+La versión **0.6.0a14** es una alpha y ha sido validada con listados reales **«LLISTAT D'ALUMNES AMB ASSIGNATURES» generados desde ITACA 3 / Gestión Administrativa**, incluidos casos de ESO, Bachillerato y FP.
 
-Antes de procesar un listado, la aplicación comprueba la firma estructural del formato actualmente soportado mediante la fila de cabeceras:
+Antes de procesar un listado, la aplicación comprueba la firma estructural del formato actualmente soportado mediante una de las filas de cabeceras conocidas:
 
 ```text
-ORDE | NIA | REPETIX | COGNOMS I NOM | MATÈRIA
+Formato general: ORDE | NIA | REPETIX | COGNOMS I NOM | MATÈRIA
+Formato FP:      ORDE | NIA | COGNOMS I NOM | MÒDUL
 ```
 
 Si esa firma no aparece, el documento queda marcado para revisar. Esto ayuda a evitar que un PDF diferente de ITACA sea interpretado accidentalmente como el formato conocido.
@@ -59,13 +60,15 @@ sudo apt install python3-tk pipx
 
 ## Uso gráfico
 
-El área superior de la ventana es el punto de entrada principal. Cuando TkDND está disponible, admite arrastrar uno o varios PDF o una carpeta; al hacer clic permite seleccionar uno o varios PDF. Si el drag-and-drop no puede cargarse en una combinación concreta de Python/Tk/sistema operativo, la aplicación continúa funcionando y el área sigue siendo clicable. Las carpetas también pueden añadirse desde **Archivo → Añadir carpeta…**.
+El área superior de la ventana es el punto de entrada principal. Cuando TkDND está disponible, admite arrastrar uno o varios PDF o una carpeta. Al hacer clic sobre el área, tanto con drag-and-drop disponible como sin él, se puede elegir entre **uno o varios PDF** o **una carpeta completa**; no es necesario buscar estas acciones en la barra de menús.
 
 La tabla no muestra nombres ni NIA. Antes de convertir enseña únicamente el PDF, el grupo, el curso, el número de alumnos y un estado `Correcto`, `Revisar` o `Error`.
 
 La unidad de salida es **GRUP**. Un mismo PDF puede contener varios grupos, como ocurre en determinados listados de FP. A la vez, un mismo `GRUP` puede incluir varias secciones `CURS`, como ocurre en determinados listados de Bachillerato; cada reinicio legítimo de `ORDE` se valida por sección sin dividir necesariamente el XLSX final.
 
 La herramienta detecta también `TUTOR` cuando existe. Se usa como metadato local y para comprobaciones de coherencia, pero no se exporta al XLSX.
+
+Cuando una celda de nombre o de materias/módulos ocupa más de una línea visual, el extractor conserva la detección normal de la fila y añade únicamente los bloques de continuación sin `ORDE`/`NIA` que pertenecen inequívocamente a esa misma fila.
 
 ## XLSX generado
 
@@ -75,19 +78,23 @@ Por defecto contiene únicamente:
 Apellidos | Nombre
 ```
 
-Opcionalmente puede incluir `NIA`, pensado para mapearlo al campo personal `ID` / `Student ID` de iDoceo.
+En la ventana principal aparecen tres opciones independientes para añadir datos del listado al XLSX:
 
-`ORDE` se utiliza para validar la estructura. `REPETIX` y `MATÈRIA` forman parte de la firma del informe, pero por ahora no se exportan: no se añaden columnas al cuaderno de iDoceo sin un destino claro.
+- `NIA`, pensado para mapearlo al campo personal `ID` / `Student ID` de iDoceo.
+- `REPETIX`, conservando el marcador que muestra ITACA (habitualmente `R` para alumnado repetidor y vacío en el resto).
+- `MATÈRIA / MÒDUL`, conservando el contenido de la columna de materias o módulos de cada alumno.
+
+Las tres opciones están desactivadas por defecto. `ORDE` se utiliza sólo para validar la estructura y no se exporta. Si se incluyen `REPETIX` o `MATÈRIA / MÒDUL`, conviene decidir explícitamente su destino en el asistente de iDoceo para evitar que terminen accidentalmente como columnas de notas.
 
 ## Importación en iDoceo
 
-En el asistente de importación de iDoceo, utiliza la primera fila como cabecera, asigna `Nombre` y `Apellidos` en la composición del nombre del estudiante y, si se exportó el NIA, asígnalo al campo personal `ID` / `Student ID`. Comprueba antes de terminar que iDoceo no haya seleccionado ninguna columna no deseada como columna del cuaderno.
+En el asistente de importación de iDoceo, utiliza la primera fila como cabecera, asigna `Nombre` y `Apellidos` en la composición del nombre del estudiante y, si se exportó el NIA, asígnalo al campo personal `ID` / `Student ID`. Si también incluyes `REPETIX` o `MATÈRIA / MÒDUL`, decide expresamente cómo quieres importarlos. Comprueba antes de terminar que iDoceo no haya seleccionado ninguna columna no deseada como columna del cuaderno.
 
 ## Diagnóstico anonimizado
 
 Para informar de un problema sin compartir datos del alumnado, usa **Ayuda → Copiar diagnóstico anonimizado**. El texto copiado incluye versión, sistema operativo, versiones de Python/Tcl/Tk, disponibilidad del drag-and-drop, número de páginas, número de clases, recuentos de alumnado, resultado de la firma ITACA 3 y mensajes de validación filtrados.
 
-El diagnóstico **no incluye** nombres ni rutas de PDF, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado ni NIA. Los errores no reconocidos se omiten en lugar de copiar su texto potencialmente sensible.
+El diagnóstico **no incluye** nombres ni rutas de PDF, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado, NIA, `REPETIX` ni `MATÈRIA`. Los errores no reconocidos se omiten en lugar de copiar su texto potencialmente sensible.
 
 No adjuntes PDF reales, XLSX resultantes ni capturas con datos personales a una incidencia pública.
 
@@ -99,11 +106,12 @@ itaca-idoceo extract listado.pdf
 itaca-idoceo batch carpeta/
 ```
 
-Para incluir NIA:
+Los datos opcionales se pueden combinar libremente:
 
 ```text
 itaca-idoceo extract listado.pdf --include-nia
-itaca-idoceo batch carpeta/ --include-nia
+itaca-idoceo extract listado.pdf --include-repetix --include-materia
+itaca-idoceo batch carpeta/ --include-nia --include-repetix --include-materia
 ```
 
 `check` es una herramienta de inspección **local** y sí puede mostrar metadatos del listado, por lo que su salida no debe copiarse a una incidencia pública. Para soporte utiliza el diagnóstico anonimizado de la GUI.

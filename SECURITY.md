@@ -4,11 +4,11 @@
 
 ITACA → iDoceo procesa localmente PDF que pueden contener datos personales de alumnado. Los listados reales no deben salir del ordenador autorizado ni adjuntarse a incidencias públicas del proyecto.
 
-No adjuntes PDF, XLSX, nombres, NIA, información identificativa del centro, nombres de tutores ni capturas que contengan esos datos.
+No adjuntes PDF, XLSX, nombres, NIA, REPETIX, MATÈRIA, información identificativa del centro, nombres de tutores ni capturas que contengan esos datos.
 
 ## Cómo informar de un fallo
 
-En la interfaz utiliza **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en la incidencia. El diagnóstico omite nombres y rutas de ficheros, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado y NIA. Los mensajes de error no reconocidos se sustituyen por un texto genérico para evitar que una excepción futura pueda filtrar accidentalmente una ruta u otro dato sensible.
+En la interfaz utiliza **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en la incidencia. El diagnóstico omite nombres y rutas de ficheros, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado, NIA, REPETIX y MATÈRIA. Los mensajes de error no reconocidos se sustituyen por un texto genérico para evitar que una excepción futura pueda filtrar accidentalmente una ruta u otro dato sensible.
 
 Si hace falta describir algo adicional, utiliza únicamente recuentos o estructura no identificativa: número de páginas, número esperado/detectado de alumnos o la posición relativa de una cabecera. No inventes ni sustituyas datos reales por otros dentro del PDF para compartirlo: el documento no debe compartirse en ningún caso.
 
