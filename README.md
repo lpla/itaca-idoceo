@@ -2,140 +2,102 @@
 
 Convierte **localmente** listados PDF de alumnado de ITACA (Generalitat Valenciana) en archivos `.xlsx` preparados para importar en iDoceo.
 
+**Descarga e instalación:** [PyPI](https://pypi.org/project/itaca-idoceo/) · **Versiones:** [GitHub Releases](https://github.com/lpla/itaca-idoceo/releases)
+
 > [!IMPORTANT]
-> La herramienta no sube PDF ni datos del alumnado a ningún servicio. No contiene telemetría, analítica ni funciones de red para procesar los listados: la lectura del PDF y la generación del XLSX se realizan íntegramente en el equipo del usuario.
+> La herramienta no sube PDF ni datos del alumnado a ningún servicio. La lectura del PDF y la creación del XLSX se realizan íntegramente en el ordenador donde se ejecuta.
 
-## Compatibilidad actual
+> [!NOTE]
+> Este es un proyecto independiente. No está afiliado, respaldado ni mantenido por la Generalitat Valenciana ni por iDoceo.
 
-La versión **0.6.0a14** es una alpha y ha sido validada con listados reales **«LLISTAT D'ALUMNES AMB ASSIGNATURES» generados desde ITACA 3 / Gestión Administrativa**, incluidos casos de ESO, Bachillerato y FP.
+## ¿Qué listados admite?
 
-Antes de procesar un listado, la aplicación comprueba la firma estructural del formato actualmente soportado mediante una de las filas de cabeceras conocidas:
+Actualmente está validado con **«LLISTAT D'ALUMNES AMB ASSIGNATURES» generado desde ITACA 3 / Gestión Administrativa**, incluidos listados de ESO, Bachillerato y FP.
+
+Reconoce, entre otras, estas dos cabeceras:
 
 ```text
 Formato general: ORDE | NIA | REPETIX | COGNOMS I NOM | MATÈRIA
 Formato FP:      ORDE | NIA | COGNOMS I NOM | MÒDUL
 ```
 
-Si esa firma no aparece, el documento queda marcado para revisar. Esto ayuda a evitar que un PDF diferente de ITACA sea interpretado accidentalmente como el formato conocido.
-
-Los PDF obtenidos desde el entorno docente **Mòdul Docent 2 (MD2)** pueden tener otro formato y **todavía no están soportados ni validados**. Se añadirá un extractor específico cuando dispongamos de ejemplos que puedan comprobarse localmente sin compartir datos personales.
+Los PDF obtenidos desde **Mòdul Docent 2 (MD2)** pueden tener otro formato y **todavía no están soportados ni validados**.
 
 ## Instalación
 
-Requiere **Python 3.12 o posterior**. La instalación recomendada será mediante `pipx`, que mantiene la aplicación aislada del Python del sistema:
+La instalación sólo requiere usar una terminal una vez. Después puedes abrir la aplicación desde el acceso gráfico creado por `itaca-idoceo integrate`.
+
+Sigue la guía de tu sistema operativo:
+
+- [Windows](docs/INSTALL.md#windows)
+- [macOS](docs/INSTALL.md#macos)
+- [LliureX / Ubuntu y derivados](docs/INSTALL.md#lliurex--ubuntu-y-derivados)
+
+Si ya tienes Python 3.12 o posterior y `pipx`, la instalación es simplemente:
 
 ```text
 pipx install itaca-idoceo
 itaca-idoceo integrate
 ```
 
-Mientras la alpha aún no esté publicada en PyPI, puede instalarse directamente desde este repositorio:
+## Uso habitual
 
-```text
-pipx install 'git+https://github.com/lpla/itaca-idoceo.git'
-itaca-idoceo integrate
-```
+1. Abre **ITACA → iDoceo** desde el acceso creado en tu sistema.
+2. Arrastra uno o varios PDF, una carpeta completa, o haz clic en el área superior para seleccionarlos.
+3. Comprueba que cada grupo aparece como `Correcto`. Si aparece `Revisar` o `Error`, consulta los detalles antes de convertir.
+4. Marca sólo los datos adicionales que quieras exportar: `NIA`, `REPETIX` y/o `MATÈRIA / MÒDUL`.
+5. Genera los XLSX e impórtalos en iDoceo.
 
-La aplicación también puede abrirse directamente con:
-
-```text
-itaca-idoceo
-```
-
-### Dependencias de interfaz por plataforma
-
-En Windows, las instalaciones de Python de python.org incluyen normalmente Tkinter. En macOS con Homebrew:
-
-```text
-brew install python python-tk pipx
-```
-
-En LliureX/Ubuntu y derivados:
-
-```text
-sudo apt install python3-tk pipx
-```
-
-`itaca-idoceo integrate` crea accesos gráficos locales: un acceso directo en Windows, un lanzador `.desktop` en Linux y, en macOS, `~/Applications/ITACA a iDoceo.app` junto con la Acción rápida de Finder **Abrir en ITACA a iDoceo**.
-
-## Uso gráfico
-
-El área superior de la ventana es el punto de entrada principal. Cuando TkDND está disponible, admite arrastrar uno o varios PDF o una carpeta. Al hacer clic sobre el área, tanto con drag-and-drop disponible como sin él, se puede elegir entre **uno o varios PDF** o **una carpeta completa**; no es necesario buscar estas acciones en la barra de menús.
-
-La tabla no muestra nombres ni NIA. Antes de convertir enseña únicamente el PDF, el grupo, el curso, el número de alumnos y un estado `Correcto`, `Revisar` o `Error`.
-
-La unidad de salida es **GRUP**. Un mismo PDF puede contener varios grupos, como ocurre en determinados listados de FP. A la vez, un mismo `GRUP` puede incluir varias secciones `CURS`, como ocurre en determinados listados de Bachillerato; cada reinicio legítimo de `ORDE` se valida por sección sin dividir necesariamente el XLSX final.
-
-La herramienta detecta también `TUTOR` cuando existe. Se usa como metadato local y para comprobaciones de coherencia, pero no se exporta al XLSX.
-
-Cuando una celda de nombre o de materias/módulos ocupa más de una línea visual, el extractor conserva la detección normal de la fila y añade únicamente los bloques de continuación sin `ORDE`/`NIA` que pertenecen inequívocamente a esa misma fila.
-
-## XLSX generado
-
-Por defecto contiene únicamente:
+Por defecto, el XLSX contiene únicamente:
 
 ```text
 Apellidos | Nombre
 ```
 
-En la ventana principal aparecen tres opciones independientes para añadir datos del listado al XLSX:
+`NIA` está pensado para mapearlo al campo personal `ID` / `Student ID` de iDoceo. Si exportas `REPETIX` o `MATÈRIA / MÒDUL`, decide expresamente su destino durante la importación para evitar que iDoceo los interprete como columnas de notas.
 
-- `NIA`, pensado para mapearlo al campo personal `ID` / `Student ID` de iDoceo.
-- `REPETIX`, conservando el marcador que muestra ITACA (habitualmente `R` para alumnado repetidor y vacío en el resto).
-- `MATÈRIA / MÒDUL`, conservando el contenido de la columna de materias o módulos de cada alumno.
+Un mismo PDF puede contener varios grupos y la aplicación generará un XLSX por `GRUP`. También admite casos de Bachillerato en los que un mismo grupo contiene varias secciones `CURS` y casos en los que un nombre o la lista de materias ocupa varias líneas del PDF.
 
-Las tres opciones están desactivadas por defecto. `ORDE` se utiliza sólo para validar la estructura y no se exporta. Si se incluyen `REPETIX` o `MATÈRIA / MÒDUL`, conviene decidir explícitamente su destino en el asistente de iDoceo para evitar que terminen accidentalmente como columnas de notas.
+## Si algo no funciona
 
-## Importación en iDoceo
+**No compartas el PDF real ni el XLSX generado.** Los listados pueden contener datos personales de menores.
 
-En el asistente de importación de iDoceo, utiliza la primera fila como cabecera, asigna `Nombre` y `Apellidos` en la composición del nombre del estudiante y, si se exportó el NIA, asígnalo al campo personal `ID` / `Student ID`. Si también incluyes `REPETIX` o `MATÈRIA / MÒDUL`, decide expresamente cómo quieres importarlos. Comprueba antes de terminar que iDoceo no haya seleccionado ninguna columna no deseada como columna del cuaderno.
+En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en una incidencia de GitHub. El diagnóstico está diseñado para omitir nombres, NIA, centro, grupo, tutor, materias y rutas locales.
 
-## Diagnóstico anonimizado
+[Cómo informar de un problema de forma segura](SECURITY.md)
 
-Para informar de un problema sin compartir datos del alumnado, usa **Ayuda → Copiar diagnóstico anonimizado**. El texto copiado incluye versión, sistema operativo, versiones de Python/Tcl/Tk, disponibilidad del drag-and-drop, número de páginas, número de clases, recuentos de alumnado, resultado de la firma ITACA 3 y mensajes de validación filtrados.
+## Actualizar
 
-El diagnóstico **no incluye** nombres ni rutas de PDF, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado, NIA, `REPETIX` ni `MATÈRIA`. Los errores no reconocidos se omiten en lugar de copiar su texto potencialmente sensible.
-
-No adjuntes PDF reales, XLSX resultantes ni capturas con datos personales a una incidencia pública.
-
-## Terminal
-
-```text
-itaca-idoceo check listado.pdf
-itaca-idoceo extract listado.pdf
-itaca-idoceo batch carpeta/
-```
-
-Los datos opcionales se pueden combinar libremente:
-
-```text
-itaca-idoceo extract listado.pdf --include-nia
-itaca-idoceo extract listado.pdf --include-repetix --include-materia
-itaca-idoceo batch carpeta/ --include-nia --include-repetix --include-materia
-```
-
-`check` es una herramienta de inspección **local** y sí puede mostrar metadatos del listado, por lo que su salida no debe copiarse a una incidencia pública. Para soporte utiliza el diagnóstico anonimizado de la GUI.
-
-## Actualización y desinstalación
-
-Cuando la distribución esté en PyPI:
+Si ya lo tienes instalado desde PyPI:
 
 ```text
 pipx upgrade itaca-idoceo
 ```
 
-Para eliminar los accesos creados por la aplicación y después desinstalarla:
+Si después de actualizar necesitas recrear el acceso gráfico:
+
+```text
+itaca-idoceo integrate --replace
+```
+
+## Desinstalar
 
 ```text
 itaca-idoceo uninstall-integration
 pipx uninstall itaca-idoceo
 ```
 
+## Uso avanzado
+
+La mayoría de usuarios no necesita esta parte. La línea de comandos, el procesamiento por lotes y `layout-report` están documentados aparte:
+
+[Uso avanzado y diagnóstico técnico](docs/ADVANCED.md)
+
 ## Privacidad y seguridad
 
-Los PDF de ITACA pueden contener datos personales de menores. El proyecto está diseñado para no necesitar que esos documentos salgan del ordenador del centro. Consulta [SECURITY.md](SECURITY.md) antes de abrir una incidencia.
+El proyecto no incorpora telemetría ni analítica y no necesita servicios remotos para procesar los listados. Las dependencias se descargan únicamente durante la instalación o actualización mediante el gestor de paquetes elegido por el usuario.
 
-El drag-and-drop, cuando está disponible, se implementa mediante `tkinterdnd2`/TkDND y no cambia el modelo de procesamiento local. Si esa extensión nativa no puede cargarse, se desactiva automáticamente sin impedir el uso de la aplicación.
+Consulta [SECURITY.md](SECURITY.md) antes de abrir una incidencia.
 
 ## Licencia
 

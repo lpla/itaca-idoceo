@@ -1,26 +1,33 @@
 # Seguridad y privacidad
 
-## Datos tratados
+Los PDF de ITACA pueden contener datos personales de menores. La regla principal para pedir ayuda es sencilla: **no compartas el PDF original ni el XLSX generado**.
 
-ITACA → iDoceo procesa localmente PDF que pueden contener datos personales de alumnado. Los listados reales no deben salir del ordenador autorizado ni adjuntarse a incidencias públicas del proyecto.
+## Qué no debes adjuntar a una incidencia
 
-No adjuntes PDF, XLSX, nombres, NIA, REPETIX, MATÈRIA, información identificativa del centro, nombres de tutores ni capturas que contengan esos datos.
+No publiques PDF, XLSX, capturas con datos visibles, nombres del alumnado, NIA, REPETIX, MATÈRIA/MÒDUL, centro, grupo, tutor ni rutas locales que identifiquen personas o equipos.
 
-## Cómo informar de un fallo
+## Cómo informar de un fallo de extracción
 
-En la interfaz utiliza **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en la incidencia. El diagnóstico omite nombres y rutas de ficheros, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado, NIA, REPETIX y MATÈRIA. Los mensajes de error no reconocidos se sustituyen por un texto genérico para evitar que una excepción futura pueda filtrar accidentalmente una ruta u otro dato sensible.
+1. Abre ITACA → iDoceo.
+2. Ve a **Ayuda → Copiar diagnóstico anonimizado**.
+3. Revisa el texto copiado.
+4. Pégalo en la incidencia junto con una descripción que use únicamente estructura o recuentos no identificativos.
 
-Si hace falta describir algo adicional, utiliza únicamente recuentos o estructura no identificativa: número de páginas, número esperado/detectado de alumnos o la posición relativa de una cabecera. No inventes ni sustituyas datos reales por otros dentro del PDF para compartirlo: el documento no debe compartirse en ningún caso.
+El diagnóstico omite nombres y rutas de ficheros, centro, `GRUP`, `CURS`, valor de `TUTOR`, nombres del alumnado, NIA, REPETIX y MATÈRIA/MÒDUL. Los mensajes de error no reconocidos se sustituyen por un texto genérico para reducir el riesgo de filtrar información accidentalmente.
+
+Si necesitas describir algo adicional, utiliza expresiones como «se detectan 29 alumnos y deberían ser 30» o «la cabecera cambia de MATÈRIA a MÒDUL». No modifiques un PDF real para intentar anonimizarlo y compartirlo: **el PDF no debe salir del equipo autorizado**.
+
+## Informes `layout-report`
+
+Para algunos problemas de maquetación el mantenedor puede pedir un informe generado con `itaca-idoceo layout-report`. Ese informe está diseñado para anonimizar el contenido y conservar únicamente la geometría necesaria para depuración, pero debes revisarlo antes de compartirlo.
+
+La salida de `itaca-idoceo check` es para inspección local y **no** debe pegarse en una incidencia pública porque puede mostrar metadatos del listado.
+
+Las instrucciones técnicas están en [Uso avanzado y diagnóstico técnico](docs/ADVANCED.md).
 
 ## Procesamiento local
 
-La extracción del PDF y la generación del XLSX no requieren servicios remotos, telemetría ni analítica. Las dependencias se instalan mediante el gestor elegido por el usuario; se recomienda `pipx`.
-
-Para actualizar una instalación publicada en PyPI:
-
-```text
-pipx upgrade itaca-idoceo
-```
+La extracción del PDF y la generación del XLSX se realizan localmente. El programa no incorpora telemetría ni analítica y no necesita servicios remotos para procesar los listados. Las conexiones de red se limitan a las que realice el gestor de paquetes durante la instalación o actualización de dependencias.
 
 ## Vulnerabilidades del software
 

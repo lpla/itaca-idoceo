@@ -6,13 +6,17 @@ body:
   - type: markdown
     attributes:
       value: |
-        **No adjuntes PDF, XLSX, capturas, nombres, NIA, REPETIX, MATÈRIA ni información identificativa del centro, grupo o tutor.**
-        En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y pega únicamente ese diagnóstico junto con una descripción no identificativa del problema.
+        Gracias por ayudar a probar ITACA → iDoceo.
+
+        **No adjuntes PDF, XLSX, capturas, nombres, NIA, REPETIX, MATÈRIA/MÒDUL ni información identificativa del centro, grupo o tutor.**
+
+        En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado**, revisa el texto y pega únicamente ese diagnóstico junto con una descripción no identificativa del problema.
   - type: input
     id: version
     attributes:
       label: Versión de ITACA → iDoceo
-      placeholder: "0.6.0a14"
+      description: Puedes consultarla ejecutando `itaca-idoceo --version`.
+      placeholder: "Pega aquí la versión instalada"
     validations:
       required: true
   - type: dropdown
@@ -37,14 +41,14 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: Resultado esperado
-      description: Describe sólo estructura o recuentos no identificativos.
+      label: Qué esperabas que ocurriera
+      description: Describe únicamente estructura o recuentos no identificativos, por ejemplo «deberían detectarse 30 alumnos».
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
       label: Qué ocurrió
-      description: No pegues nombres, NIA, REPETIX, MATÈRIA, grupo, tutor, centro, rutas locales ni contenido sensible del PDF.
+      description: No pegues nombres, NIA, REPETIX, MATÈRIA/MÒDUL, grupo, tutor, centro, rutas locales ni contenido sensible del PDF.
     validations:
       required: true
