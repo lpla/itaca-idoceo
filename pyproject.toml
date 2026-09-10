@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "itaca-idoceo"
+version = "0.6.0a8"
+description = "Convierte localmente listados PDF de alumnado de ITACA a XLSX preparados para iDoceo"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Leopoldo Pla Sempere" }
+]
+keywords = ["ITACA", "iDoceo", "educacion", "docentes", "Generalitat Valenciana", "XLSX", "PDF"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Environment :: MacOS X",
+  "Environment :: Win32 (MS Windows)",
+  "Environment :: X11 Applications",
+  "Intended Audience :: Education",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Education",
+]
+dependencies = [
+  "PyMuPDF>=1.26,<2",
+  "openpyxl>=3.1,<4",
+  "tkinterdnd2>=0.6.3,<0.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/lpla/itaca-idoceo"
+Repository = "https://github.com/lpla/itaca-idoceo"
+Issues = "https://github.com/lpla/itaca-idoceo/issues"
+PyPI = "https://pypi.org/project/itaca-idoceo/"
+
+[project.scripts]
+"itaca-idoceo" = "itaca_idoceo.cli:main"
+
+[project.gui-scripts]
+"itaca-idoceo-gui" = "itaca_idoceo.gui:main"
+
+[project.entry-points."pipx.run"]
+"itaca-idoceo" = "itaca_idoceo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

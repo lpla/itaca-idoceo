@@ -1,0 +1,50 @@
+name: Error de extracción
+about: Informar de un problema sin compartir datos personales del alumnado
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **No adjuntes PDF, XLSX, capturas, nombres, NIA ni información identificativa del centro, grupo o tutor.**
+        En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y pega únicamente ese diagnóstico junto con una descripción no identificativa del problema.
+  - type: input
+    id: version
+    attributes:
+      label: Versión de ITACA → iDoceo
+      placeholder: "0.6.0a8"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Sistema operativo
+      options:
+        - Windows
+        - macOS
+        - LliureX
+        - Otro Linux
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostic
+    attributes:
+      label: Diagnóstico anonimizado
+      description: Pega el contenido generado por Ayuda → Copiar diagnóstico anonimizado. Revísalo antes de enviarlo.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+      description: Describe sólo estructura o recuentos no identificativos.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Qué ocurrió
+      description: No pegues nombres, NIA, grupo, tutor, centro, rutas locales ni contenido sensible del PDF.
+    validations:
+      required: true
