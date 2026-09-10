@@ -40,6 +40,8 @@ pipx install itaca-idoceo
 itaca-idoceo integrate
 ```
 
+En macOS, tras instalar, puede ser necesario activar una vez **Abrir en ITACA a iDoceo** en **Ajustes del Sistema → Privacidad y seguridad → Extensiones → Finder**. La [guía de instalación](docs/INSTALL.md#macos) explica el paso.
+
 ## Uso habitual
 
 1. Abre **ITACA → iDoceo** desde el acceso creado en tu sistema.

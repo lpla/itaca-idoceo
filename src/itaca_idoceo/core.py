@@ -13,7 +13,7 @@ from pathlib import Path
 import pymupdf
 
 
-SCRIPT_VERSION = "0.6.0a14"
+SCRIPT_VERSION = "0.7.0"
 
 
 # ===========================================================================

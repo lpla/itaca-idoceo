@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+- Primera versión pública sin sufijo alpha; el proyecto pasa a estado de madurez **Beta** en los metadatos de PyPI.
+- Corrige la integración de macOS para registrar **Abrir en ITACA a iDoceo** como Acción rápida real de Finder, además de como servicio.
+- La Acción rápida acepta un PDF, varios archivos o carpetas y abre la GUI con la selección ya cargada; el filtrado de PDF sigue realizándose dentro de la aplicación.
+- Añade el contexto y los metadatos de Finder que permiten mostrar la acción en **Acciones rápidas** y en **Privacidad y seguridad → Extensiones → Finder**.
+- Documenta el paso de activación que macOS puede requerir la primera vez y la recreación mediante `itaca-idoceo integrate --replace` al actualizar desde versiones anteriores.
+- Conserva sin cambios la lógica de extracción validada en 0.6.0a14 para ITACA 3, incluidos FP, múltiples grupos, múltiples secciones CURS, campos opcionales y continuaciones de celdas.
+- Añade pruebas de regresión específicas para los metadatos del workflow de macOS.
+
 ## 0.6.0a14
 
 - Mantiene intacto el detector estable por bloque y corrige las celdas con wrap únicamente como una fase posterior de augmentación.

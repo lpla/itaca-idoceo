@@ -239,6 +239,10 @@ def _write_macos_quick_action(workflow: Path) -> None:
         "workflowMetaData": {
             "applicationBundleID": "com.apple.finder",
             "applicationPath": "/System/Library/CoreServices/Finder.app",
+            "applicationBundleIDsByPath": {
+                "/System/Library/CoreServices/Finder.app": "com.apple.finder",
+            },
+            "applicationPaths": ["/System/Library/CoreServices/Finder.app"],
             "inputTypeIdentifier": "com.apple.Automator.fileSystemObject",
             "outputTypeIdentifier": "com.apple.Automator.nothing",
             "processesInput": 0,
@@ -248,6 +252,8 @@ def _write_macos_quick_action(workflow: Path) -> None:
             "serviceOutputTypeIdentifier": "com.apple.Automator.nothing",
             "serviceProcessesInput": 0,
             "useAutomaticInputType": 0,
+            "systemImageName": "NSActionTemplate",
+            "presentationMode": 15,
             "workflowTypeIdentifier": "com.apple.Automator.servicesMenu",
         },
     }
@@ -257,6 +263,14 @@ def _write_macos_quick_action(workflow: Path) -> None:
             {
                 "NSMenuItem": {"default": QUICK_ACTION_NAME},
                 "NSMessage": "runWorkflowAsService",
+                "NSRequiredContext": {
+                    "NSApplicationIdentifier": "com.apple.finder",
+                },
+                "NSBackgroundColorName": "background",
+                "NSIconName": "NSActionTemplate",
+                # public.item permite usar la Acción rápida con uno o varios
+                # PDF y también con carpetas; la GUI filtra después los PDF.
+                "NSSendFileTypes": ["public.item"],
             }
         ]
     }

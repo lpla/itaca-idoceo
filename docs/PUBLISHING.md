@@ -71,7 +71,7 @@ La producción se dispara al publicar una GitHub Release:
 
 1. Crear el tag `vVERSION` apuntando al commit validado de `main`.
 2. Crear una GitHub Release con ese tag.
-3. Marcarla como **pre-release** si es alpha, beta o release candidate.
+3. Marcarla como **pre-release** sólo si la propia versión es un prerelease (por ejemplo `a1`, `b1` o `rc1`). El clasificador de madurez `Development Status :: 4 - Beta` no convierte por sí solo una versión como `0.7.0` en prerelease.
 4. Publicarla; guardarla como borrador no dispara el workflow.
 5. `.github/workflows/release.yml` construye de nuevo wheel y sdist y los publica en PyPI mediante Trusted Publishing.
 6. Comprobar que **Release to PyPI** termina en verde y que la versión aparece en PyPI.

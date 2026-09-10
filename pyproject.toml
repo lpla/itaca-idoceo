@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "itaca-idoceo"
-version = "0.6.0a14"
+version = "0.7.0"
 description = "Convierte localmente listados PDF de alumnado de ITACA a XLSX preparados para iDoceo"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["ITACA", "iDoceo", "educacion", "docentes", "Generalitat Valenciana", "XLSX", "PDF"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
   "Environment :: MacOS X",
   "Environment :: Win32 (MS Windows)",

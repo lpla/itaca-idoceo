@@ -60,6 +60,24 @@ itaca-idoceo integrate
 
 Se crea una aplicación en `~/Applications/ITACA a iDoceo.app` y también una Acción rápida de Finder llamada **Abrir en ITACA a iDoceo**.
 
+### 4. Activar la Acción rápida de Finder
+
+La primera vez, macOS puede dejar la Acción rápida desactivada. Para activarla:
+
+1. Abre **Ajustes del Sistema**.
+2. Entra en **Privacidad y seguridad → Extensiones → Finder**.
+3. Activa **Abrir en ITACA a iDoceo**.
+
+Después puedes seleccionar en Finder un PDF, varios archivos o una carpeta y usar **clic derecho → Acciones rápidas → Abrir en ITACA a iDoceo**. También aparece en **Finder → Servicios** cuando hay una selección compatible.
+
+Si actualizas desde una versión anterior y la Acción rápida no aparece, ejecuta una vez:
+
+```text
+itaca-idoceo integrate --replace
+```
+
+y comprueba de nuevo **Ajustes del Sistema → Privacidad y seguridad → Extensiones → Finder**.
+
 ## LliureX / Ubuntu y derivados
 
 ### 1. Abrir Terminal
