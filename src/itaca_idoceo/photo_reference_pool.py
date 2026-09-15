@@ -6,8 +6,34 @@ from pathlib import Path
 import unicodedata
 
 from .core import ClassResult, PageMetadata, Student, process_pdf
-from .photo_match import PhotoRosterReferenceMatch, _group_key, match_photo_result_to_class
-from .photo_roster import PhotoRosterResult, detect_photo_roster, print_photo_roster_check
+from .photo_match import (
+    FUZZY_ACCEPT_SCORE,
+    FUZZY_MARGIN,
+    PhotoRosterReferenceMatch,
+    _fuzzy_pair_is_plausible,
+    _fuzzy_score,
+    _group_key,
+    _photo_key,
+    _reference_key,
+    match_photo_result_to_class,
+)
+from .photo_roster import PhotoRosterResult, PhotoRosterStudent, detect_photo_roster, print_photo_roster_check
+
+
+@dataclass(frozen=True)
+class UnresolvedDiagnostic:
+    ordinal: int
+    row: int
+    column: int
+    has_photo: bool
+    best_score: float | None
+    surname_score: float | None
+    given_score: float | None
+    photo_margin: float | None
+    reference_margin: float | None
+    initials_match: bool | None
+    mutual_best: bool | None
+    plausible_pair: bool | None
 
 
 @dataclass
@@ -33,6 +59,140 @@ class ReferencePoolMatch:
             for student in self.photo_result.students
             if student.ordinal not in matched
         ]
+
+    @property
+    def unresolved_diagnostics(self) -> list[UnresolvedDiagnostic]:
+        """Diagnóstico anónimo del mejor candidato de cada alumno pendiente.
+
+        No expone nombres, NIA, grupos ni rutas. Sólo usa la posición del alumno
+        en la cuadrícula y métricas de similitud para distinguir una ausencia real
+        de una diferencia de escritura que haya quedado justo bajo los umbrales.
+        """
+        reference_class = self.match.reference_class
+        if reference_class is None:
+            return [
+                UnresolvedDiagnostic(
+                    ordinal=ordinal,
+                    row=row,
+                    column=column,
+                    has_photo=has_photo,
+                    best_score=None,
+                    surname_score=None,
+                    given_score=None,
+                    photo_margin=None,
+                    reference_margin=None,
+                    initials_match=None,
+                    mutual_best=None,
+                    plausible_pair=None,
+                )
+                for ordinal, row, column, has_photo in self.unresolved_positions
+            ]
+
+        matched_photo_ordinals = {link.photo.ordinal for link in self.match.links}
+        matched_reference_ids = {id(link.reference) for link in self.match.links}
+        remaining_photos = [
+            student
+            for student in self.photo_result.students
+            if student.ordinal not in matched_photo_ordinals
+        ]
+        remaining_references = [
+            student
+            for student in reference_class.students
+            if id(student) not in matched_reference_ids
+        ]
+
+        if not remaining_references:
+            return [
+                UnresolvedDiagnostic(
+                    ordinal=student.ordinal,
+                    row=student.row,
+                    column=student.column,
+                    has_photo=student.has_photo,
+                    best_score=None,
+                    surname_score=None,
+                    given_score=None,
+                    photo_margin=None,
+                    reference_margin=None,
+                    initials_match=None,
+                    mutual_best=None,
+                    plausible_pair=None,
+                )
+                for student in remaining_photos
+            ]
+
+        scores: dict[tuple[int, int], tuple[float, float, float]] = {}
+        for photo_index, photo in enumerate(remaining_photos):
+            for reference_index, reference in enumerate(remaining_references):
+                scores[(photo_index, reference_index)] = _fuzzy_score(photo, reference)
+
+        diagnostics: list[UnresolvedDiagnostic] = []
+        for photo_index, photo in enumerate(remaining_photos):
+            ranking = sorted(
+                (
+                    (scores[(photo_index, reference_index)][0], reference_index)
+                    for reference_index in range(len(remaining_references))
+                ),
+                reverse=True,
+            )
+            best_score, reference_index = ranking[0]
+            score, surname_score, given_score = scores[(photo_index, reference_index)]
+            reference = remaining_references[reference_index]
+
+            photo_margin = (
+                best_score - ranking[1][0]
+                if len(ranking) > 1
+                else 1.0
+            )
+            reference_ranking = sorted(
+                (
+                    (scores[(other_photo_index, reference_index)][0], other_photo_index)
+                    for other_photo_index in range(len(remaining_photos))
+                ),
+                reverse=True,
+            )
+            mutual_best = reference_ranking[0][1] == photo_index
+            reference_margin = (
+                best_score - reference_ranking[1][0]
+                if len(reference_ranking) > 1
+                else 1.0
+            )
+
+            photo_surname, photo_given = _photo_key(photo, "folded")
+            ref_surname, ref_given = _reference_key(reference, "folded")
+            initials_match = bool(
+                photo_surname
+                and photo_given
+                and ref_surname
+                and ref_given
+                and photo_surname[0] == ref_surname[0]
+                and photo_given[0] == ref_given[0]
+            )
+            plausible_pair = _fuzzy_pair_is_plausible(
+                photo,
+                reference,
+                score,
+                surname_score,
+                given_score,
+            )
+
+            diagnostics.append(
+                UnresolvedDiagnostic(
+                    ordinal=photo.ordinal,
+                    row=photo.row,
+                    column=photo.column,
+                    has_photo=photo.has_photo,
+                    best_score=best_score,
+                    surname_score=surname_score,
+                    given_score=given_score,
+                    photo_margin=photo_margin,
+                    reference_margin=reference_margin,
+                    initials_match=initials_match,
+                    mutual_best=mutual_best,
+                    plausible_pair=plausible_pair,
+                )
+            )
+
+        return diagnostics
 
     def reference_by_photo_ordinal(self) -> dict[int, Student]:
         return self.match.reference_by_photo_ordinal()
@@ -174,6 +334,10 @@ def match_photo_result_to_references(
     )
 
 
+def _format_optional_score(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
 def print_reference_pool_match(result: ReferencePoolMatch) -> None:
     match = result.match
     counts: Counter[str] = match.method_counts
@@ -197,15 +361,42 @@ def print_reference_pool_match(result: ReferencePoolMatch) -> None:
     print(f"Sin coincidencia: {match.unmatched_photos}")
     print(f"Coincidencias ambiguas: {match.ambiguous_photos}")
 
-    positions = result.unresolved_positions
-    if positions:
-        rendered = ", ".join(
-            f"#{ordinal} (fila {row}, columna {column}, "
-            + ("con foto" if has_photo else "sin foto")
-            + ")"
-            for ordinal, row, column, has_photo in positions
-        )
-        print("Pendientes de cruce por posición: " + rendered)
+    diagnostics = result.unresolved_diagnostics
+    if diagnostics:
+        print("Diagnóstico anónimo de pendientes:")
+        for item in diagnostics:
+            location = (
+                f"#{item.ordinal} (fila {item.row}, columna {item.column}, "
+                + ("con foto" if item.has_photo else "sin foto")
+                + ")"
+            )
+            if item.best_score is None:
+                print(f"  {location}: sin candidatos libres en las referencias")
+                continue
+
+            flags: list[str] = []
+            if item.initials_match is False:
+                flags.append("iniciales distintas")
+            if item.best_score < FUZZY_ACCEPT_SCORE:
+                flags.append(f"score<{FUZZY_ACCEPT_SCORE:.2f}")
+            if item.photo_margin is not None and item.photo_margin < FUZZY_MARGIN:
+                flags.append(f"margen alumno<{FUZZY_MARGIN:.2f}")
+            if item.mutual_best is False:
+                flags.append("el candidato prefiere otro alumno")
+            if item.reference_margin is not None and item.reference_margin < FUZZY_MARGIN:
+                flags.append(f"margen referencia<{FUZZY_MARGIN:.2f}")
+            if item.plausible_pair is False and not flags:
+                flags.append("componentes bajo el umbral seguro")
+
+            reason = ", ".join(flags) if flags else "candidato cercano no aceptado"
+            print(
+                f"  {location}: score={_format_optional_score(item.best_score)} "
+                f"apellidos={_format_optional_score(item.surname_score)} "
+                f"nombre={_format_optional_score(item.given_score)} "
+                f"margen_alumno={_format_optional_score(item.photo_margin)} "
+                f"margen_referencia={_format_optional_score(item.reference_margin)} "
+                f"-> {reason}"
+            )
 
     for issue in match.issues:
         print(f"REVISAR: {issue}")
