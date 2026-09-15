@@ -7,6 +7,7 @@ from pathlib import Path
 from . import __version__
 from .core import batch_extract, check_pdf, extract_one
 from .integrations import install_integration, uninstall_integration
+from .photo_export import export_photo_roster_cli
 from .photo_roster import check_photo_roster
 
 
@@ -128,6 +129,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     photo_check.add_argument("pdf", type=Path)
 
+    photo_export = subparsers.add_parser(
+        "photo-export",
+        help="Extrae alumnado y fotos de un listado fotográfico para iDoceo.",
+    )
+    photo_export.add_argument("pdf", type=Path)
+    photo_export.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Carpeta de salida. Si se omite, se crea junto al PDF.",
+    )
+
     return parser
 
 
@@ -236,6 +250,11 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
         return check_photo_roster(args.pdf)
+
+    if args.command == "photo-export":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        return export_photo_roster_cli(args.pdf, args.output_dir)
 
     parser.error("comando no reconocido")
     return 2
