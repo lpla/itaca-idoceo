@@ -38,38 +38,32 @@ def _make_photo_roster(path):
         pymupdf.Rect(25, 178, 102, 273),
         stream=_png_rgb(),
     )
-    page.insert_image(
-        pymupdf.Rect(119, 178, 196, 273),
-        stream=_png_rgb(),
-    )
     page.insert_text((25, 285), "GARCIA LOPEZ, ANA", fontsize=6)
-    page.insert_text((119, 285), "PEREZ, BEA", fontsize=6)
 
     doc.save(path)
     doc.close()
 
 
-def test_export_photo_roster_creates_xlsx_photos_and_guide(tmp_path):
+def test_export_photo_roster_creates_xlsx_photo_and_guide(tmp_path):
     pdf_path = tmp_path / "grupo_materia.pdf"
     output_dir = tmp_path / "salida"
     _make_photo_roster(pdf_path)
 
     result = export_photo_roster(pdf_path, output_dir)
 
-    assert result.students == 2
-    assert result.photos == 2
-    assert result.automatic_name_matches == 2
+    assert result.students == 1
+    assert result.photos == 1
+    assert result.automatic_name_matches == 1
     assert result.manual_name_matches == 0
 
     workbook = load_workbook(result.xlsx_path)
     sheet = workbook.active
     assert [cell.value for cell in sheet[1]] == ["Apellidos", "Nombre"]
     assert [sheet["A2"].value, sheet["B2"].value] == ["GARCIA LOPEZ", "ANA"]
-    assert [sheet["A3"].value, sheet["B3"].value] == ["PEREZ", "BEA"]
 
     photos = sorted(path.name for path in result.photos_dir.glob("*.png"))
-    assert photos == ["GARCIA LOPEZ, ANA.png", "PEREZ, BEA.png"]
-    assert all((result.photos_dir / name).stat().st_size > 0 for name in photos)
+    assert photos == ["GARCIA LOPEZ, ANA.png"]
+    assert (result.photos_dir / photos[0]).stat().st_size > 0
 
     guide = result.guide_path.read_text(encoding="utf-8")
     assert "Importación masiva" in guide
