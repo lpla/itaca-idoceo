@@ -7,6 +7,7 @@ from pathlib import Path
 from . import __version__
 from .core import batch_extract, check_pdf, extract_one
 from .integrations import install_integration, uninstall_integration
+from .photo_roster import check_photo_roster
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,7 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Convierte un PDF en uno o varios XLSX (uno por grupo).",
     )
     extract.add_argument("pdf", type=Path)
-    extract.add_argument("-o", "--output", type=Path, default=None, help="XLSX de salida si hay una clase; carpeta de salida si hay varias")
+    extract.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="XLSX de salida si hay una clase; carpeta de salida si hay varias",
+    )
     extract.add_argument(
         "--include-nia",
         action="store_true",
@@ -92,7 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limita el informe a una o varias filas ORDE (se puede repetir).",
     )
     layout.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=None,
         help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
@@ -104,11 +112,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     photo_layout.add_argument("pdf", type=Path)
     photo_layout.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=None,
         help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
     )
+
+    photo_check = subparsers.add_parser(
+        "photo-check",
+        help=(
+            "Comprueba de forma anónima el emparejamiento foto/nombre de un "
+            "listado con fotos."
+        ),
+    )
+    photo_check.add_argument("pdf", type=Path)
 
     return parser
 
@@ -131,7 +149,6 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    # Sin argumentos: comportamiento pensado para usuario final.
     if not argv:
         return _launch_gui()
 
@@ -190,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
         from .layout_debug import build_layout_report
+
         report = build_layout_report(
             args.pdf,
             only_ordinals=set(args.orde) if args.orde else None,
@@ -205,6 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
         from .photo_layout_debug import build_photo_layout_report
+
         report = build_photo_layout_report(args.pdf)
         if args.output is None:
             print(report, end="")
@@ -212,6 +231,11 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(report, encoding="utf-8")
             print("Informe anonimizado de listado con fotos guardado.")
         return 0
+
+    if args.command == "photo-check":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        return check_photo_roster(args.pdf)
 
     parser.error("comando no reconocido")
     return 2
