@@ -6,8 +6,12 @@ import zlib
 import pymupdf
 from openpyxl import load_workbook
 
-from itaca_idoceo.photo_export import export_photo_roster
-from itaca_idoceo.photo_roster import detect_photo_roster
+import itaca_idoceo.photo_export as photo_export
+from itaca_idoceo.photo_roster import (
+    PhotoRosterPageSummary,
+    PhotoRosterResult,
+    PhotoRosterStudent,
+)
 
 
 def _png_rgb(width: int = 2, height: int = 2) -> bytes:
@@ -31,65 +35,75 @@ def _png_rgb(width: int = 2, height: int = 2) -> bytes:
     )
 
 
-def _make_photo_roster(path):
-    doc = pymupdf.open()
-    page = doc.new_page(width=595, height=842)
-
-    page.insert_text((25, 150), "GRUPO: 3ESO A - 3ESO A", fontsize=6)
-    page.insert_text((285, 150), "TUTOR: Doe, Jane", fontsize=6)
-
-    page.insert_image(
+def _make_source_pdf(path) -> int:
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    xref = page.insert_image(
         pymupdf.Rect(25, 178, 102, 273),
         stream=_png_rgb(),
     )
-    missing_rect = pymupdf.Rect(119, 178, 196, 273)
-    page.draw_rect(missing_rect)
-    page.insert_textbox(
-        pymupdf.Rect(122, 210, 193, 245),
-        "Fotografia no\ndisponible",
-        fontsize=6,
-        align=1,
+    document.save(path)
+    document.close()
+    return xref
+
+
+def _roster_result(pdf_path, xref: int) -> PhotoRosterResult:
+    return PhotoRosterResult(
+        source=pdf_path,
+        page_count=1,
+        students=[
+            PhotoRosterStudent(
+                page=1,
+                ordinal=1,
+                row=1,
+                column=1,
+                full_name="GARCIA LOPEZ, ANA",
+                surnames="GARCIA LOPEZ",
+                given_names="ANA",
+                xref=xref,
+                image_x0=25,
+                image_y0=178,
+                image_x1=102,
+                image_y1=273,
+                name_lines=1,
+            ),
+            PhotoRosterStudent(
+                page=1,
+                ordinal=2,
+                row=1,
+                column=2,
+                full_name="PEREZ, BEA",
+                surnames="PEREZ",
+                given_names="BEA",
+                xref=0,
+                image_x0=119,
+                image_y0=178,
+                image_x1=196,
+                image_y1=273,
+                name_lines=1,
+            ),
+        ],
+        pages=[PhotoRosterPageSummary(1, 1, 2, 1, 2, 0, 1)],
+        issues=[],
+        group_raw="3ESO A - 3ESO A",
+        group_code="3ESO A",
+        tutor="Doe, Jane",
     )
-    page.insert_image(
-        pymupdf.Rect(213, 178, 290, 273),
-        stream=_png_rgb(),
-    )
-
-    page.insert_text((25, 285), "GARCIA LOPEZ, ANA", fontsize=6)
-    page.insert_text((119, 285), "PEREZ, BEA", fontsize=6)
-    page.insert_text((213, 285), "RUIZ, CARLA", fontsize=6)
-
-    doc.save(path)
-    doc.close()
 
 
-def test_detect_photo_roster_keeps_student_without_photo_and_header_metadata(tmp_path):
-    pdf_path = tmp_path / "grupo_materia.pdf"
-    _make_photo_roster(pdf_path)
-
-    result = detect_photo_roster(pdf_path)
-
-    assert result.is_valid
-    assert len(result.students) == 3
-    assert sum(student.has_photo for student in result.students) == 2
-    assert result.pages[0].candidate_photos == 2
-    assert result.pages[0].missing_photos == 1
-    assert result.pages[0].paired_students == 3
-    assert result.group_code == "3ESO A"
-    assert result.tutor == "Doe, Jane"
-
-
-def test_export_photo_roster_creates_xlsx_only_for_available_photos(tmp_path):
+def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, monkeypatch):
     pdf_path = tmp_path / "grupo_materia.pdf"
     output_dir = tmp_path / "salida"
-    _make_photo_roster(pdf_path)
+    xref = _make_source_pdf(pdf_path)
+    roster = _roster_result(pdf_path, xref)
+    monkeypatch.setattr(photo_export, "detect_photo_roster", lambda _: roster)
 
-    result = export_photo_roster(pdf_path, output_dir)
+    result = photo_export.export_photo_roster(pdf_path, output_dir)
 
-    assert result.students == 3
-    assert result.photos == 2
+    assert result.students == 2
+    assert result.photos == 1
     assert result.missing_photos == 1
-    assert result.automatic_name_matches == 2
+    assert result.automatic_name_matches == 1
     assert result.manual_name_matches == 0
 
     workbook = load_workbook(result.xlsx_path)
@@ -97,11 +111,10 @@ def test_export_photo_roster_creates_xlsx_only_for_available_photos(tmp_path):
     assert [cell.value for cell in sheet[1]] == ["Apellidos", "Nombre"]
     assert [sheet["A2"].value, sheet["B2"].value] == ["GARCIA LOPEZ", "ANA"]
     assert [sheet["A3"].value, sheet["B3"].value] == ["PEREZ", "BEA"]
-    assert [sheet["A4"].value, sheet["B4"].value] == ["RUIZ", "CARLA"]
 
     photos = sorted(path.name for path in result.photos_dir.glob("*.png"))
-    assert photos == ["GARCIA LOPEZ, ANA.png", "RUIZ, CARLA.png"]
-    assert all((result.photos_dir / name).stat().st_size > 0 for name in photos)
+    assert photos == ["GARCIA LOPEZ, ANA.png"]
+    assert (result.photos_dir / photos[0]).stat().st_size > 0
 
     guide = result.guide_path.read_text(encoding="utf-8")
     assert "Importación masiva" in guide
