@@ -24,6 +24,7 @@ class PhotoExportResult:
     guide_path: Path
     students: int
     photos: int
+    missing_photos: int
     automatic_name_matches: int
     manual_name_matches: int
 
@@ -45,7 +46,9 @@ def _photo_base_name(full_name: str) -> str:
 
 
 def _as_core_class(result: PhotoRosterResult) -> ClassResult:
-    class_name = result.source.stem
+    fallback_name = result.source.stem
+    group_raw = result.group_raw or fallback_name
+    group_code = result.group_code or group_raw
     students = [
         Student(
             page=student.page,
@@ -63,8 +66,9 @@ def _as_core_class(result: PhotoRosterResult) -> ClassResult:
     return ClassResult(
         source=result.source,
         metadata=PageMetadata(
-            group_raw=class_name,
-            group_code=class_name,
+            group_raw=group_raw,
+            group_code=group_code,
+            tutor=result.tutor,
         ),
         students=students,
         issues=[],
@@ -74,6 +78,7 @@ def _as_core_class(result: PhotoRosterResult) -> ClassResult:
 def _build_import_guide(
     automatic_name_matches: int,
     manual_name_matches: int,
+    missing_photos: int,
 ) -> str:
     lines = [
         "ITACA → iDoceo | importación de listado con fotos",
@@ -86,6 +91,10 @@ def _build_import_guide(
         "",
         f"Fotos preparadas para coincidencia automática por nombre: {automatic_name_matches}",
         f"Fotos que requieren revisión manual por nombre duplicado: {manual_name_matches}",
+        f"Alumnos sin fotografía disponible en el PDF: {missing_photos}",
+        "",
+        "Los alumnos sin fotografía se incluyen igualmente en el XLSX; simplemente",
+        "no tienen un archivo correspondiente dentro de la carpeta fotos.",
         "",
         "Si alguna foto no se asigna automáticamente, iDoceo la deja disponible",
         "para asignarla manualmente desde el propio plano de asientos.",
@@ -122,7 +131,8 @@ def export_photo_roster(
 
     write_idoceo_xlsx(_as_core_class(result), xlsx_path)
 
-    bases = [_photo_base_name(student.full_name) for student in result.students]
+    photo_students = [student for student in result.students if student.has_photo]
+    bases = [_photo_base_name(student.full_name) for student in photo_students]
     base_counts = Counter(base.casefold() for base in bases)
     occurrences: Counter[str] = Counter()
     automatic_name_matches = 0
@@ -131,7 +141,7 @@ def export_photo_roster(
 
     document = pymupdf.open(pdf_path)
     try:
-        for student, base in zip(result.students, bases):
+        for student, base in zip(photo_students, bases):
             key = base.casefold()
             occurrences[key] += 1
 
@@ -155,8 +165,13 @@ def export_photo_roster(
     finally:
         document.close()
 
+    missing_photos = len(result.students) - photo_count
     guide_path.write_text(
-        _build_import_guide(automatic_name_matches, manual_name_matches),
+        _build_import_guide(
+            automatic_name_matches,
+            manual_name_matches,
+            missing_photos,
+        ),
         encoding="utf-8",
     )
 
@@ -167,6 +182,7 @@ def export_photo_roster(
         guide_path=guide_path,
         students=len(result.students),
         photos=photo_count,
+        missing_photos=missing_photos,
         automatic_name_matches=automatic_name_matches,
         manual_name_matches=manual_name_matches,
     )
@@ -177,6 +193,7 @@ def print_photo_export_result(result: PhotoExportResult) -> None:
     print("Exportación de listado con fotos: OK")
     print(f"Alumnos: {result.students}")
     print(f"Fotos extraídas: {result.photos}")
+    print(f"Sin fotografía en el PDF: {result.missing_photos}")
     print(
         "Coincidencia automática por nombre: "
         f"{result.automatic_name_matches}"

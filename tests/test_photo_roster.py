@@ -1,12 +1,15 @@
 from pathlib import Path
 
 from itaca_idoceo.photo_roster import (
+    MissingPhotoBlock,
     NameBlock,
     PhotoCandidate,
     PhotoRosterPageSummary,
     PhotoRosterResult,
     PhotoRosterStudent,
+    _add_missing_photo_slots,
     _cluster_rows,
+    _is_missing_photo_text,
     _pair_row,
     _parse_name_text,
     print_photo_roster_check,
@@ -55,6 +58,23 @@ def test_pair_row_uses_name_block_directly_below_same_column():
     assert [pair[1].full_name for pair in pairs if pair[1]] == ["Uno, Ana", "Dos, Bea"]
 
 
+def test_missing_photo_text_is_accent_and_whitespace_insensitive():
+    assert _is_missing_photo_text("Fotografía no\ndisponible")
+    assert _is_missing_photo_text("FOTOGRAFIA   NO DISPONIBLE")
+
+
+def test_missing_photo_block_becomes_slot_in_existing_grid_row():
+    photos = [_photo(25, 178, 1), _photo(213, 178, 2)]
+    missing = [MissingPhotoBlock(130, 215, 185, 240)]
+
+    slots = _add_missing_photo_slots(photos, missing, page_number=1)
+    row = _cluster_rows(slots)[0]
+
+    assert len(row) == 3
+    assert [slot.xref for slot in row] == [1, 0, 2]
+    assert row[1].missing_photo is True
+
+
 def test_check_output_never_prints_student_names_or_source_path(capsys):
     secret = "Apellido Privado, Nombre Privado"
     result = PhotoRosterResult(
@@ -69,7 +89,7 @@ def test_check_output_never_prints_student_names_or_source_path(capsys):
                 full_name=secret,
                 surnames="Apellido Privado",
                 given_names="Nombre Privado",
-                xref=6,
+                xref=0,
                 image_x0=25,
                 image_y0=178,
                 image_x1=102,
@@ -77,8 +97,11 @@ def test_check_output_never_prints_student_names_or_source_path(capsys):
                 name_lines=1,
             )
         ],
-        pages=[PhotoRosterPageSummary(1, 1, 1, 1, 1, 0)],
+        pages=[PhotoRosterPageSummary(1, 0, 1, 1, 1, 0, 1)],
         issues=[],
+        group_raw="GRUPO PRIVADO",
+        group_code="GRUPO PRIVADO",
+        tutor="Tutor Privado, Nombre",
     )
 
     print_photo_roster_check(result)
@@ -86,4 +109,7 @@ def test_check_output_never_prints_student_names_or_source_path(capsys):
     assert secret not in output
     assert "Apellido Privado" not in output
     assert "listado-real.pdf" not in output
+    assert "GRUPO PRIVADO" not in output
+    assert "Tutor Privado" not in output
     assert "Alumnos emparejados: 1" in output
+    assert "fotos=0 sin_foto=1 parejas=1" in output

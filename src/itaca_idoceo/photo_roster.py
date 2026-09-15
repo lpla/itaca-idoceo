@@ -2,10 +2,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from statistics import median
 
 import pymupdf
 
-from .core import clean_spaces, is_name_component
+from .core import (
+    canonical_group_code,
+    clean_header_value_tokens,
+    clean_spaces,
+    extract_visual_words,
+    is_name_component,
+    label_key,
+    normalize_header_token,
+    same_visual_row,
+)
+
+
+MISSING_PHOTO_KEY = "FOTOGRAFIANODISPONIBLE"
 
 
 @dataclass(frozen=True)
@@ -18,10 +31,15 @@ class PhotoCandidate:
     y1: float
     width_px: int
     height_px: int
+    missing_photo: bool = False
 
     @property
     def cx(self) -> float:
         return (self.x0 + self.x1) / 2.0
+
+    @property
+    def cy(self) -> float:
+        return (self.y0 + self.y1) / 2.0
 
     @property
     def width(self) -> float:
@@ -30,6 +48,22 @@ class PhotoCandidate:
     @property
     def height(self) -> float:
         return self.y1 - self.y0
+
+
+@dataclass(frozen=True)
+class MissingPhotoBlock:
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @property
+    def cx(self) -> float:
+        return (self.x0 + self.x1) / 2.0
+
+    @property
+    def cy(self) -> float:
+        return (self.y0 + self.y1) / 2.0
 
 
 @dataclass(frozen=True)
@@ -65,6 +99,10 @@ class PhotoRosterStudent:
     image_y1: float
     name_lines: int
 
+    @property
+    def has_photo(self) -> bool:
+        return self.xref > 0
+
 
 @dataclass(frozen=True)
 class PhotoRosterPageSummary:
@@ -74,6 +112,7 @@ class PhotoRosterPageSummary:
     rows: int
     max_columns: int
     wrapped_names: int
+    missing_photos: int = 0
 
 
 @dataclass
@@ -83,6 +122,9 @@ class PhotoRosterResult:
     students: list[PhotoRosterStudent]
     pages: list[PhotoRosterPageSummary]
     issues: list[str]
+    group_raw: str | None = None
+    group_code: str | None = None
+    tutor: str | None = None
 
     @property
     def is_valid(self) -> bool:
@@ -216,6 +258,86 @@ def _extract_photo_candidates(page, page_number: int) -> list[PhotoCandidate]:
     return result
 
 
+def _is_missing_photo_text(text: str) -> bool:
+    return normalize_header_token(text) == MISSING_PHOTO_KEY
+
+
+def _extract_missing_photo_blocks(page) -> list[MissingPhotoBlock]:
+    """Localiza el marcador textual ``Fotografía no disponible``.
+
+    El informe observado lo dibuja dentro de una casilla del mismo tamaño que
+    las fotos. Primero intentamos reconstruir el texto por bloque; como
+    salvaguarda, también agrupamos las tres palabras por proximidad visual para
+    tolerar generadores PDF que las separen en bloques distintos.
+    """
+    text_dict = page.get_text("dict", sort=False)
+    result: list[MissingPhotoBlock] = []
+
+    for block in text_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        lines: list[str] = []
+        rects: list[pymupdf.Rect] = []
+        for line in block.get("lines", []):
+            text = "".join(
+                str(span.get("text", "")) for span in line.get("spans", [])
+            ).strip()
+            if not text:
+                continue
+            lines.append(text)
+            rects.append(_visual_rect(page, line.get("bbox", (0, 0, 0, 0))))
+        if lines and rects and _is_missing_photo_text(" ".join(lines)):
+            result.append(
+                MissingPhotoBlock(
+                    x0=min(rect.x0 for rect in rects),
+                    y0=min(rect.y0 for rect in rects),
+                    x1=max(rect.x1 for rect in rects),
+                    y1=max(rect.y1 for rect in rects),
+                )
+            )
+
+    if result:
+        return result
+
+    words: list[tuple[str, pymupdf.Rect]] = []
+    for item in page.get_text("words", sort=False):
+        rect = _visual_rect(page, item[:4])
+        words.append((normalize_header_token(str(item[4])), rect))
+
+    fotografia = [rect for key, rect in words if key == "FOTOGRAFIA"]
+    no_words = [rect for key, rect in words if key == "NO"]
+    disponible = [rect for key, rect in words if key == "DISPONIBLE"]
+
+    for first in fotografia:
+        nearby_no = [
+            rect
+            for rect in no_words
+            if abs(((rect.x0 + rect.x1) / 2.0) - ((first.x0 + first.x1) / 2.0)) <= 75
+            and abs(((rect.y0 + rect.y1) / 2.0) - ((first.y0 + first.y1) / 2.0)) <= 28
+        ]
+        nearby_available = [
+            rect
+            for rect in disponible
+            if abs(((rect.x0 + rect.x1) / 2.0) - ((first.x0 + first.x1) / 2.0)) <= 75
+            and 0 <= ((rect.y0 + rect.y1) / 2.0) - ((first.y0 + first.y1) / 2.0) <= 45
+        ]
+        if not nearby_no or not nearby_available:
+            continue
+        second = min(nearby_no, key=lambda rect: abs(rect.y0 - first.y0))
+        third = min(nearby_available, key=lambda rect: abs(rect.y0 - first.y0))
+        rects = [first, second, third]
+        result.append(
+            MissingPhotoBlock(
+                x0=min(rect.x0 for rect in rects),
+                y0=min(rect.y0 for rect in rects),
+                x1=max(rect.x1 for rect in rects),
+                y1=max(rect.y1 for rect in rects),
+            )
+        )
+
+    return result
+
+
 def _cluster_rows(
     photos: list[PhotoCandidate],
     tolerance: float = 12.0,
@@ -239,6 +361,54 @@ def _cluster_rows(
     for row in rows:
         row.sort(key=lambda item: item.x0)
     return rows
+
+
+def _add_missing_photo_slots(
+    photos: list[PhotoCandidate],
+    missing_blocks: list[MissingPhotoBlock],
+    page_number: int,
+) -> list[PhotoCandidate]:
+    """Convierte los marcadores sin foto en casillas geométricas de la cuadrícula."""
+    if not missing_blocks:
+        return list(photos)
+    if not photos:
+        # Sin ninguna fotografía real no tenemos todavía una referencia segura
+        # para inferir el tamaño y la fila de las casillas.
+        return list(photos)
+
+    width = float(median(photo.width for photo in photos))
+    height = float(median(photo.height for photo in photos))
+    real_rows = _cluster_rows(photos)
+    result = list(photos)
+
+    for block in missing_blocks:
+        row = min(
+            real_rows,
+            key=lambda items: abs(
+                (sum(item.cy for item in items) / len(items)) - block.cy
+            ),
+        )
+        row_cy = sum(item.cy for item in row) / len(row)
+        if abs(row_cy - block.cy) > max(45.0, height * 0.8):
+            continue
+
+        row_y0 = float(median(item.y0 for item in row))
+        row_y1 = float(median(item.y1 for item in row))
+        result.append(
+            PhotoCandidate(
+                page=page_number,
+                xref=0,
+                x0=block.cx - width / 2.0,
+                y0=row_y0,
+                x1=block.cx + width / 2.0,
+                y1=row_y1,
+                width_px=0,
+                height_px=0,
+                missing_photo=True,
+            )
+        )
+
+    return result
 
 
 def _pair_row(
@@ -284,26 +454,96 @@ def _pair_row(
     return pairs
 
 
+def _extract_group_metadata(page) -> tuple[str | None, str | None, str | None]:
+    """Reutiliza la geometría GRUP/GRUPO ... TUTOR del informe clásico."""
+    words = extract_visual_words(page)
+    group_labels = [
+        word for word in words if label_key(word.text) in {"GRUP", "GRUPO"}
+    ]
+    tutor_labels = [word for word in words if label_key(word.text) == "TUTOR"]
+
+    for group_label in group_labels:
+        compatible = [
+            tutor_label
+            for tutor_label in tutor_labels
+            if tutor_label.cx > group_label.cx
+            and same_visual_row(group_label, tutor_label, tolerance=9.0)
+        ]
+        if not compatible:
+            continue
+
+        tutor_label = min(
+            compatible,
+            key=lambda word: (
+                abs(word.cy - group_label.cy),
+                word.cx - group_label.cx,
+            ),
+        )
+        group_words = [
+            word
+            for word in words
+            if word is not group_label
+            and same_visual_row(word, group_label, tolerance=9.0)
+            and group_label.cx < word.cx < tutor_label.cx
+            and label_key(word.text) not in {"GRUP", "GRUPO", "TUTOR"}
+        ]
+        group_words.sort(key=lambda word: word.x0)
+        group_raw = clean_header_value_tokens([word.text for word in group_words])
+
+        tutor_words = [
+            word
+            for word in words
+            if word is not tutor_label
+            and same_visual_row(word, tutor_label, tolerance=9.0)
+            and word.cx > tutor_label.cx
+            and label_key(word.text) not in {"GRUP", "GRUPO", "TUTOR"}
+        ]
+        tutor_words.sort(key=lambda word: word.x0)
+        tutor = clean_header_value_tokens([word.text for word in tutor_words])
+        return group_raw, canonical_group_code(group_raw), tutor
+
+    return None, None, None
+
+
 def detect_photo_roster(pdf_path: Path) -> PhotoRosterResult:
-    """Detecta el formato de cuadrícula foto + nombre sin extraer imágenes."""
+    """Detecta la cuadrícula de alumnado, incluyendo casillas sin fotografía."""
     document = pymupdf.open(pdf_path)
     try:
         students: list[PhotoRosterStudent] = []
         summaries: list[PhotoRosterPageSummary] = []
         issues: list[str] = []
         ordinal = 0
+        group_raw: str | None = None
+        group_code: str | None = None
+        tutor: str | None = None
 
         for page_number, page in enumerate(document, start=1):
+            page_group_raw, page_group_code, page_tutor = _extract_group_metadata(page)
+            if group_raw is None and page_group_raw:
+                group_raw = page_group_raw
+                group_code = page_group_code
+                tutor = page_tutor
+
             photos = _extract_photo_candidates(page, page_number)
+            missing_blocks = _extract_missing_photo_blocks(page)
+            slots = _add_missing_photo_slots(photos, missing_blocks, page_number)
             names = _extract_name_blocks(page)
-            rows = _cluster_rows(photos)
+            rows = _cluster_rows(slots)
             used_blocks: set[int] = set()
             paired_on_page = 0
             wrapped_on_page = 0
+            missing_on_page = sum(slot.missing_photo for slot in slots)
 
-            if photos and page.rect.width >= page.rect.height:
+            if missing_blocks and missing_on_page != len(missing_blocks):
                 issues.append(
-                    f"Página {page_number}: se detectan fotos pero la página no está en orientación vertical"
+                    f"Página {page_number}: no se han podido ubicar todas las casillas "
+                    "de «Fotografía no disponible»"
+                )
+
+            if slots and page.rect.width >= page.rect.height:
+                issues.append(
+                    f"Página {page_number}: se detecta una cuadrícula de alumnado "
+                    "pero la página no está en orientación vertical"
                 )
 
             for row_index, row in enumerate(rows, start=1):
@@ -312,13 +552,13 @@ def detect_photo_roster(pdf_path: Path) -> PhotoRosterResult:
                     next_row = rows[row_index]
                     next_row_y = min(item.y0 for item in next_row)
 
-                for column_index, (photo, name) in enumerate(
+                for column_index, (slot, name) in enumerate(
                     _pair_row(row, names, next_row_y, used_blocks),
                     start=1,
                 ):
                     if name is None:
                         issues.append(
-                            f"Página {page_number}: una foto de la fila {row_index}, "
+                            f"Página {page_number}: una casilla de la fila {row_index}, "
                             f"columna {column_index} no tiene un nombre inequívoco debajo"
                         )
                         continue
@@ -337,24 +577,24 @@ def detect_photo_roster(pdf_path: Path) -> PhotoRosterResult:
                             full_name=name.full_name,
                             surnames=name.surnames,
                             given_names=name.given_names,
-                            xref=photo.xref,
-                            image_x0=photo.x0,
-                            image_y0=photo.y0,
-                            image_x1=photo.x1,
-                            image_y1=photo.y1,
+                            xref=slot.xref,
+                            image_x0=slot.x0,
+                            image_y0=slot.y0,
+                            image_x1=slot.x1,
+                            image_y1=slot.y1,
                             name_lines=name.line_count,
                         )
                     )
 
-            if photos:
+            if slots:
                 if any(len(row) > 6 for row in rows):
                     issues.append(
-                        f"Página {page_number}: se han detectado más de 6 fotos en una fila"
+                        f"Página {page_number}: se han detectado más de 6 casillas en una fila"
                     )
-                if len(photos) != paired_on_page:
+                if len(slots) != paired_on_page:
                     issues.append(
-                        f"Página {page_number}: {len(photos)} fotos candidatas y "
-                        f"{paired_on_page} parejas foto/nombre"
+                        f"Página {page_number}: {len(slots)} casillas de alumnado y "
+                        f"{paired_on_page} parejas casilla/nombre"
                     )
 
                 summaries.append(
@@ -365,13 +605,14 @@ def detect_photo_roster(pdf_path: Path) -> PhotoRosterResult:
                         rows=len(rows),
                         max_columns=max((len(row) for row in rows), default=0),
                         wrapped_names=wrapped_on_page,
+                        missing_photos=missing_on_page,
                     )
                 )
 
         if not summaries:
-            issues.append("No se ha detectado una cuadrícula compatible de fotos de alumnado")
+            issues.append("No se ha detectado una cuadrícula compatible de alumnado")
         if summaries and not students:
-            issues.append("No se ha podido emparejar ninguna foto con un nombre")
+            issues.append("No se ha podido emparejar ninguna casilla con un nombre")
 
         return PhotoRosterResult(
             source=pdf_path,
@@ -379,6 +620,9 @@ def detect_photo_roster(pdf_path: Path) -> PhotoRosterResult:
             students=students,
             pages=summaries,
             issues=issues,
+            group_raw=group_raw,
+            group_code=group_code,
+            tutor=tutor,
         )
     finally:
         document.close()
@@ -386,7 +630,10 @@ def detect_photo_roster(pdf_path: Path) -> PhotoRosterResult:
 
 def print_photo_roster_check(result: PhotoRosterResult) -> None:
     """Muestra sólo métricas estructurales; nunca nombres, NIA ni rutas."""
-    print("Formato de listado con fotos: " + ("COMPATIBLE" if result.students else "NO DETECTADO"))
+    print(
+        "Formato de listado con fotos: "
+        + ("COMPATIBLE" if result.students else "NO DETECTADO")
+    )
     print(f"Páginas: {result.page_count}")
     print(f"Alumnos emparejados: {len(result.students)}")
     print(f"Incidencias: {len(result.issues)}")
@@ -394,8 +641,9 @@ def print_photo_roster_check(result: PhotoRosterResult) -> None:
     for page in result.pages:
         print(
             f"Página {page.page}: fotos={page.candidate_photos} "
-            f"parejas={page.paired_students} filas={page.rows} "
-            f"máx_columnas={page.max_columns} nombres_multilínea={page.wrapped_names}"
+            f"sin_foto={page.missing_photos} parejas={page.paired_students} "
+            f"filas={page.rows} máx_columnas={page.max_columns} "
+            f"nombres_multilínea={page.wrapped_names}"
         )
 
     for issue in result.issues:
