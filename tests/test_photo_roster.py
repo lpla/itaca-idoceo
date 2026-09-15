@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pymupdf
+
 from itaca_idoceo.photo_roster import (
     MissingPhotoBlock,
     NameBlock,
@@ -9,6 +11,8 @@ from itaca_idoceo.photo_roster import (
     PhotoRosterStudent,
     _add_missing_photo_slots,
     _cluster_rows,
+    _extract_group_metadata,
+    _extract_missing_photo_blocks,
     _is_missing_photo_text,
     _pair_row,
     _parse_name_text,
@@ -63,6 +67,22 @@ def test_missing_photo_text_is_accent_and_whitespace_insensitive():
     assert _is_missing_photo_text("FOTOGRAFIA   NO DISPONIBLE")
 
 
+def test_extract_missing_photo_block_from_multiline_pdf_text():
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_textbox(
+        pymupdf.Rect(122, 210, 193, 245),
+        "Fotografia no\ndisponible",
+        fontsize=6,
+        align=1,
+    )
+
+    blocks = _extract_missing_photo_blocks(page)
+    document.close()
+
+    assert len(blocks) == 1
+
+
 def test_missing_photo_block_becomes_slot_in_existing_grid_row():
     photos = [_photo(25, 178, 1), _photo(213, 178, 2)]
     missing = [MissingPhotoBlock(130, 215, 185, 240)]
@@ -73,6 +93,20 @@ def test_missing_photo_block_becomes_slot_in_existing_grid_row():
     assert len(row) == 3
     assert [slot.xref for slot in row] == [1, 0, 2]
     assert row[1].missing_photo is True
+
+
+def test_photo_header_reuses_group_and_tutor_geometry():
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((25, 150), "GRUPO: 3ESO A - 3ESO A", fontsize=6)
+    page.insert_text((285, 150), "TUTOR: Doe, Jane", fontsize=6)
+
+    group_raw, group_code, tutor = _extract_group_metadata(page)
+    document.close()
+
+    assert group_raw == "3ESO A - 3ESO A"
+    assert group_code == "3ESO A"
+    assert tutor == "Doe, Jane"
 
 
 def test_check_output_never_prints_student_names_or_source_path(capsys):
