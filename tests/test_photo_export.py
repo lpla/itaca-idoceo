@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import struct
 import zlib
+from pathlib import Path
 
 import pymupdf
 from openpyxl import load_workbook
 
 import itaca_idoceo.photo_export as photo_export
+from itaca_idoceo.core import ClassResult, PageMetadata, Student
+from itaca_idoceo.photo_match import PhotoRosterReferenceMatch, PhotoStudentLink
 from itaca_idoceo.photo_roster import (
     PhotoRosterPageSummary,
     PhotoRosterResult,
@@ -91,6 +94,29 @@ def _roster_result(pdf_path, xref: int) -> PhotoRosterResult:
     )
 
 
+def _reference_student(
+    ordinal: int,
+    nia: str,
+    surnames: str,
+    given_names: str,
+    repetix: str,
+    materia: str,
+) -> Student:
+    return Student(
+        page=1,
+        block=ordinal,
+        ordinal=ordinal,
+        nia=nia,
+        full_name=f"{surnames}, {given_names}",
+        surnames=surnames,
+        given_names=given_names,
+        row_x=0.0,
+        visual_y=float(ordinal),
+        repetix=repetix,
+        materia=materia,
+    )
+
+
 def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, monkeypatch):
     pdf_path = tmp_path / "grupo_materia.pdf"
     output_dir = tmp_path / "salida"
@@ -103,8 +129,9 @@ def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, mon
     assert result.students == 2
     assert result.photos == 1
     assert result.missing_photos == 1
-    assert result.automatic_name_matches == 1
-    assert result.manual_name_matches == 0
+    assert result.match_field == "Nombre"
+    assert result.automatic_matches == 1
+    assert result.manual_matches == 0
 
     workbook = load_workbook(result.xlsx_path)
     sheet = workbook.active
@@ -117,6 +144,93 @@ def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, mon
     assert (result.photos_dir / photos[0]).stat().st_size > 0
 
     guide = result.guide_path.read_text(encoding="utf-8")
-    assert "Importación masiva" in guide
     assert "Nombre como criterio" in guide
+    assert "emparejado por nombre puede fallar" in guide
     assert "sin fotografía disponible en el PDF: 1" in guide
+
+
+def test_export_with_reference_uses_nia_for_xlsx_and_photo_names(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "grupo_materia.pdf"
+    reference_pdf = tmp_path / "listado_tabular.pdf"
+    reference_pdf.write_bytes(b"dummy")
+    output_dir = tmp_path / "salida"
+    xref = _make_source_pdf(pdf_path)
+    roster = _roster_result(pdf_path, xref)
+    monkeypatch.setattr(photo_export, "detect_photo_roster", lambda _: roster)
+
+    first = _reference_student(
+        1,
+        "12345678",
+        "GARCIA LOPEZ",
+        "ANA",
+        "R",
+        "MUSICA",
+    )
+    second = _reference_student(
+        2,
+        "87654321",
+        "PEREZ",
+        "BEA",
+        "",
+        "MUSICA",
+    )
+    reference_class = ClassResult(
+        source=Path("listado_tabular.pdf"),
+        metadata=PageMetadata(group_code="3ESO A"),
+        students=[first, second],
+        issues=[],
+    )
+    match = PhotoRosterReferenceMatch(
+        photo_result=roster,
+        reference_class=reference_class,
+        links=[
+            PhotoStudentLink(roster.students[0], first, "exact"),
+            PhotoStudentLink(roster.students[1], second, "exact"),
+        ],
+        unmatched_photos=0,
+        ambiguous_photos=0,
+        issues=[],
+    )
+    monkeypatch.setattr(
+        photo_export,
+        "match_photo_result_to_reference",
+        lambda _roster, _reference: match,
+    )
+
+    result = photo_export.export_photo_roster(
+        pdf_path,
+        output_dir,
+        reference_pdf=reference_pdf,
+        include_repetix=True,
+        include_materia=True,
+    )
+
+    assert result.students == 2
+    assert result.photos == 1
+    assert result.missing_photos == 1
+    assert result.match_field == "NIA"
+    assert result.automatic_matches == 1
+    assert result.manual_matches == 0
+
+    workbook = load_workbook(result.xlsx_path)
+    sheet = workbook.active
+    assert [cell.value for cell in sheet[1]] == [
+        "Apellidos",
+        "Nombre",
+        "NIA",
+        "REPETIX",
+        "MATÈRIA",
+    ]
+    assert [sheet["C2"].value, sheet["D2"].value, sheet["E2"].value] == [
+        "12345678",
+        "R",
+        "MUSICA",
+    ]
+    assert sheet["C3"].value == "87654321"
+
+    photos = sorted(path.name for path in result.photos_dir.glob("*.png"))
+    assert photos == ["12345678.png"]
+
+    guide = result.guide_path.read_text(encoding="utf-8")
+    assert "NIA al campo ID / Student ID" in guide
+    assert "Selecciona ID como criterio" in guide

@@ -8,6 +8,7 @@ from . import __version__
 from .core import batch_extract, check_pdf, extract_one
 from .integrations import install_integration, uninstall_integration
 from .photo_export import export_photo_roster_cli
+from .photo_match import check_photo_roster_with_reference
 from .photo_roster import check_photo_roster
 
 
@@ -128,6 +129,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     photo_check.add_argument("pdf", type=Path)
+    photo_check.add_argument(
+        "--reference-pdf",
+        type=Path,
+        default=None,
+        help=(
+            "PDF tabular ya soportado del mismo grupo. Comprueba también un "
+            "cruce conservador por nombre sin mostrar datos personales."
+        ),
+    )
 
     photo_export = subparsers.add_parser(
         "photo-export",
@@ -140,6 +150,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Carpeta de salida. Si se omite, se crea junto al PDF.",
+    )
+    photo_export.add_argument(
+        "--reference-pdf",
+        type=Path,
+        default=None,
+        help=(
+            "PDF tabular ya soportado del mismo grupo. Si se indica, el alumnado "
+            "se cruza de forma conservadora, se incluye NIA automáticamente y "
+            "las fotos se nombran por NIA para importarlas por ID en iDoceo."
+        ),
+    )
+    photo_export.add_argument(
+        "--include-repetix",
+        action="store_true",
+        help="Incluye REPETIX obtenido del PDF tabular de referencia.",
+    )
+    photo_export.add_argument(
+        "--include-materia",
+        action="store_true",
+        help="Incluye MATÈRIA/MÒDUL obtenido del PDF tabular de referencia.",
     )
 
     return parser
@@ -249,12 +279,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "photo-check":
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
-        return check_photo_roster(args.pdf)
+        if args.reference_pdf is None:
+            return check_photo_roster(args.pdf)
+        if not args.reference_pdf.is_file():
+            parser.error(f"no existe el fichero de referencia: {args.reference_pdf}")
+        return check_photo_roster_with_reference(args.pdf, args.reference_pdf)
 
     if args.command == "photo-export":
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
-        return export_photo_roster_cli(args.pdf, args.output_dir)
+        if args.reference_pdf is not None and not args.reference_pdf.is_file():
+            parser.error(f"no existe el fichero de referencia: {args.reference_pdf}")
+        return export_photo_roster_cli(
+            args.pdf,
+            args.output_dir,
+            reference_pdf=args.reference_pdf,
+            include_repetix=args.include_repetix,
+            include_materia=args.include_materia,
+        )
 
     parser.error("comando no reconocido")
     return 2

@@ -13,6 +13,7 @@ from .core import (
     safe_filename_component,
     write_idoceo_xlsx,
 )
+from .photo_match import match_photo_result_to_reference
 from .photo_roster import PhotoRosterResult, detect_photo_roster
 
 
@@ -25,8 +26,9 @@ class PhotoExportResult:
     students: int
     photos: int
     missing_photos: int
-    automatic_name_matches: int
-    manual_name_matches: int
+    match_field: str
+    automatic_matches: int
+    manual_matches: int
 
 
 def _unique_directory(path: Path) -> Path:
@@ -45,24 +47,34 @@ def _photo_base_name(full_name: str) -> str:
     return safe_filename_component(full_name)
 
 
-def _as_core_class(result: PhotoRosterResult) -> ClassResult:
+def _as_core_class(
+    result: PhotoRosterResult,
+    reference_by_ordinal: dict[int, Student] | None = None,
+) -> ClassResult:
     fallback_name = result.source.stem
     group_raw = result.group_raw or fallback_name
     group_code = result.group_code or group_raw
-    students = [
-        Student(
-            page=student.page,
-            block=-1,
-            ordinal=student.ordinal,
-            nia="",
-            full_name=student.full_name,
-            surnames=student.surnames,
-            given_names=student.given_names,
-            row_x=0.0,
-            visual_y=float(student.ordinal),
+    reference_by_ordinal = reference_by_ordinal or {}
+
+    students: list[Student] = []
+    for student in result.students:
+        reference = reference_by_ordinal.get(student.ordinal)
+        students.append(
+            Student(
+                page=student.page,
+                block=-1,
+                ordinal=student.ordinal,
+                nia=reference.nia if reference else "",
+                full_name=student.full_name,
+                surnames=student.surnames,
+                given_names=student.given_names,
+                row_x=0.0,
+                visual_y=float(student.ordinal),
+                repetix=reference.repetix if reference else "",
+                materia=reference.materia if reference else "",
+            )
         )
-        for student in result.students
-    ]
+
     return ClassResult(
         source=result.source,
         metadata=PageMetadata(
@@ -76,8 +88,9 @@ def _as_core_class(result: PhotoRosterResult) -> ClassResult:
 
 
 def _build_import_guide(
-    automatic_name_matches: int,
-    manual_name_matches: int,
+    match_field: str,
+    automatic_matches: int,
+    manual_matches: int,
     missing_photos: int,
 ) -> str:
     lines = [
@@ -85,34 +98,80 @@ def _build_import_guide(
         "",
         "1. Importa alumnado_idoceo.xlsx en iDoceo con el asistente de importación.",
         "   Asigna las columnas Apellidos y Nombre a los campos correspondientes.",
-        "",
-        "2. Abre la clase > Plano de asientos > Herramientas > Fotos > Importación masiva.",
-        "   Selecciona Nombre como criterio del nombre de archivo y elige la carpeta fotos.",
-        "",
-        f"Fotos preparadas para coincidencia automática por nombre: {automatic_name_matches}",
-        f"Fotos que requieren revisión manual por nombre duplicado: {manual_name_matches}",
-        f"Alumnos sin fotografía disponible en el PDF: {missing_photos}",
-        "",
-        "Los alumnos sin fotografía se incluyen igualmente en el XLSX; simplemente",
-        "no tienen un archivo correspondiente dentro de la carpeta fotos.",
-        "",
-        "Si alguna foto no se asigna automáticamente, iDoceo la deja disponible",
-        "para asignarla manualmente desde el propio plano de asientos.",
-        "",
-        "Todos estos archivos se han generado localmente en tu equipo.",
     ]
+
+    if match_field == "NIA":
+        lines.extend(
+            [
+                "   Asigna también NIA al campo ID / Student ID.",
+                "",
+                "2. Abre la clase > Plano de asientos > Herramientas > Fotos > Importación masiva.",
+                "   Selecciona ID como criterio del nombre de archivo y elige la carpeta fotos.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "2. Abre la clase > Plano de asientos > Herramientas > Fotos > Importación masiva.",
+                "   Selecciona Nombre como criterio del nombre de archivo y elige la carpeta fotos.",
+                "   El emparejado por nombre puede fallar con normalizaciones de caracteres.",
+                "   Para máxima precisión, repite la exportación aportando también el PDF tabular",
+                "   del grupo para cruzar el alumnado y utilizar el NIA como ID.",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            f"Fotos preparadas para coincidencia automática por {match_field}: {automatic_matches}",
+            f"Fotos que requieren revisión manual: {manual_matches}",
+            f"Alumnos sin fotografía disponible en el PDF: {missing_photos}",
+            "",
+            "Los alumnos sin fotografía se incluyen igualmente en el XLSX; simplemente",
+            "no tienen un archivo correspondiente dentro de la carpeta fotos.",
+            "",
+            "Todos estos archivos se han generado localmente en tu equipo.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
 def export_photo_roster(
     pdf_path: Path,
     output_dir: Path | None = None,
+    *,
+    reference_pdf: Path | None = None,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> PhotoExportResult:
     """Exporta XLSX + fotos PNG para importar un listado fotográfico en iDoceo."""
     result = detect_photo_roster(pdf_path)
     if not result.is_valid:
         detail = "; ".join(result.issues) if result.issues else "formato no compatible"
         raise RuntimeError(f"No se puede exportar el listado con fotos: {detail}")
+
+    reference_by_ordinal: dict[int, Student] = {}
+    include_nia = False
+    match_field = "Nombre"
+
+    if reference_pdf is not None:
+        match_result = match_photo_result_to_reference(result, reference_pdf)
+        if not match_result.is_valid:
+            raise RuntimeError(
+                "No se puede exportar con NIA: el cruce con el PDF tabular "
+                f"no es inequívoco (emparejados={match_result.matched_photos}, "
+                f"sin_coincidencia={match_result.unmatched_photos}, "
+                f"ambiguos={match_result.ambiguous_photos})."
+            )
+        reference_by_ordinal = match_result.reference_by_photo_ordinal()
+        include_nia = True
+        match_field = "NIA"
+    elif include_repetix or include_materia:
+        raise RuntimeError(
+            "REPETIX y MATÈRIA/MÒDUL sólo pueden añadirse al listado con fotos "
+            "si se proporciona también un PDF tabular de referencia."
+        )
 
     if output_dir is None:
         base = safe_filename_component(pdf_path.stem) + "_idoceo"
@@ -129,14 +188,35 @@ def export_photo_roster(
     xlsx_path = output_dir / "alumnado_idoceo.xlsx"
     guide_path = output_dir / "IMPORTAR_EN_IDOCEO.txt"
 
-    write_idoceo_xlsx(_as_core_class(result), xlsx_path)
+    write_idoceo_xlsx(
+        _as_core_class(result, reference_by_ordinal),
+        xlsx_path,
+        include_nia=include_nia,
+        include_repetix=include_repetix,
+        include_materia=include_materia,
+    )
 
     photo_students = [student for student in result.students if student.has_photo]
-    bases = [_photo_base_name(student.full_name) for student in photo_students]
+
+    if match_field == "NIA":
+        if any(
+            not reference_by_ordinal[student.ordinal].nia.strip()
+            for student in photo_students
+        ):
+            raise RuntimeError(
+                "El PDF tabular de referencia contiene un alumno cruzado sin NIA."
+            )
+        bases = [
+            safe_filename_component(reference_by_ordinal[student.ordinal].nia.strip())
+            for student in photo_students
+        ]
+    else:
+        bases = [_photo_base_name(student.full_name) for student in photo_students]
+
     base_counts = Counter(base.casefold() for base in bases)
     occurrences: Counter[str] = Counter()
-    automatic_name_matches = 0
-    manual_name_matches = 0
+    automatic_matches = 0
+    manual_matches = 0
     photo_count = 0
 
     document = pymupdf.open(pdf_path)
@@ -147,10 +227,10 @@ def export_photo_roster(
 
             if base_counts[key] > 1:
                 filename = f"{base}__{occurrences[key]}.png"
-                manual_name_matches += 1
+                manual_matches += 1
             else:
                 filename = f"{base}.png"
-                automatic_name_matches += 1
+                automatic_matches += 1
 
             try:
                 pixmap = pymupdf.Pixmap(document, student.xref)
@@ -168,8 +248,9 @@ def export_photo_roster(
     missing_photos = len(result.students) - photo_count
     guide_path.write_text(
         _build_import_guide(
-            automatic_name_matches,
-            manual_name_matches,
+            match_field,
+            automatic_matches,
+            manual_matches,
             missing_photos,
         ),
         encoding="utf-8",
@@ -183,8 +264,9 @@ def export_photo_roster(
         students=len(result.students),
         photos=photo_count,
         missing_photos=missing_photos,
-        automatic_name_matches=automatic_name_matches,
-        manual_name_matches=manual_name_matches,
+        match_field=match_field,
+        automatic_matches=automatic_matches,
+        manual_matches=manual_matches,
     )
 
 
@@ -194,14 +276,12 @@ def print_photo_export_result(result: PhotoExportResult) -> None:
     print(f"Alumnos: {result.students}")
     print(f"Fotos extraídas: {result.photos}")
     print(f"Sin fotografía en el PDF: {result.missing_photos}")
+    print(f"Criterio de importación de fotos: {result.match_field}")
     print(
-        "Coincidencia automática por nombre: "
-        f"{result.automatic_name_matches}"
+        f"Coincidencia automática por {result.match_field}: "
+        f"{result.automatic_matches}"
     )
-    print(
-        "Revisión manual por nombres duplicados: "
-        f"{result.manual_name_matches}"
-    )
+    print(f"Revisión manual: {result.manual_matches}")
     print("Generado: alumnado_idoceo.xlsx")
     print("Generado: fotos/")
     print("Generado: IMPORTAR_EN_IDOCEO.txt")
@@ -210,9 +290,19 @@ def print_photo_export_result(result: PhotoExportResult) -> None:
 def export_photo_roster_cli(
     pdf_path: Path,
     output_dir: Path | None = None,
+    *,
+    reference_pdf: Path | None = None,
+    include_repetix: bool = False,
+    include_materia: bool = False,
 ) -> int:
     try:
-        result = export_photo_roster(pdf_path, output_dir)
+        result = export_photo_roster(
+            pdf_path,
+            output_dir,
+            reference_pdf=reference_pdf,
+            include_repetix=include_repetix,
+            include_materia=include_materia,
+        )
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
