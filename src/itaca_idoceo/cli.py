@@ -8,7 +8,7 @@ from . import __version__
 from .core import batch_extract, check_pdf, extract_one
 from .integrations import install_integration, uninstall_integration
 from .photo_export import export_photo_roster_cli
-from .photo_match import check_photo_roster_with_reference
+from .photo_reference_pool import check_photo_roster_with_references
 from .photo_roster import check_photo_roster
 
 
@@ -132,10 +132,20 @@ def build_parser() -> argparse.ArgumentParser:
     photo_check.add_argument(
         "--reference-pdf",
         type=Path,
+        action="append",
+        default=[],
+        help=(
+            "PDF tabular ya soportado que se usará como referencia. Puede "
+            "repetirse para aportar varios PDF."
+        ),
+    )
+    photo_check.add_argument(
+        "--reference-folder",
+        type=Path,
         default=None,
         help=(
-            "PDF tabular ya soportado del mismo grupo. Comprueba también un "
-            "cruce conservador por nombre sin mostrar datos personales."
+            "Carpeta con PDF de referencia. Se buscan PDF recursivamente y "
+            "se ignoran los que no tengan el formato tabular soportado."
         ),
     )
 
@@ -187,6 +197,39 @@ def _launch_gui(paths: list[str] | None = None) -> int:
         )
         return 1
     return gui_main(paths or [])
+
+
+def _collect_reference_pdfs(
+    explicit: list[Path],
+    folder: Path | None,
+    source_pdf: Path,
+    parser: argparse.ArgumentParser,
+) -> list[Path]:
+    paths: list[Path] = []
+
+    for path in explicit:
+        if not path.is_file():
+            parser.error(f"no existe el fichero de referencia: {path}")
+        paths.append(path.resolve())
+
+    if folder is not None:
+        if not folder.is_dir():
+            parser.error(f"no existe la carpeta de referencias: {folder}")
+        paths.extend(
+            path.resolve()
+            for path in folder.rglob("*.pdf")
+            if path.is_file()
+        )
+
+    source_resolved = source_pdf.resolve()
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        if path == source_resolved or path in seen:
+            continue
+        seen.add(path)
+        unique.append(path)
+    return unique
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -279,11 +322,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "photo-check":
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
-        if args.reference_pdf is None:
+        references = _collect_reference_pdfs(
+            args.reference_pdf,
+            args.reference_folder,
+            args.pdf,
+            parser,
+        )
+        if not references:
             return check_photo_roster(args.pdf)
-        if not args.reference_pdf.is_file():
-            parser.error(f"no existe el fichero de referencia: {args.reference_pdf}")
-        return check_photo_roster_with_reference(args.pdf, args.reference_pdf)
+        return check_photo_roster_with_references(args.pdf, references)
 
     if args.command == "photo-export":
         if not args.pdf.is_file():
