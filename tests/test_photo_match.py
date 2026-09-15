@@ -159,3 +159,60 @@ def test_name_crosscheck_refuses_unmatched_student_instead_of_guessing():
     assert result.matched_photos == 0
     assert result.unmatched_photos == 1
     assert result.ambiguous_photos == 0
+
+
+def test_name_crosscheck_accepts_safe_single_typo_with_mutual_best_match():
+    photo_students = [_photo_student(1, "Ferrer Soler", "Lucia")]
+    reference_students = [
+        _reference_student(1, "Ferer Soler", "Lucia", "1001"),
+        _reference_student(2, "Martinez Perez", "Lucia", "1002"),
+    ]
+
+    result = match_photo_result_to_class(
+        _photo_result(photo_students),
+        _reference_class(reference_students),
+    )
+
+    assert result.is_valid
+    assert result.matched_photos == 1
+    assert result.method_counts == {"fuzzy": 1}
+    assert result.links[0].reference.nia == "1001"
+
+
+def test_name_crosscheck_fuzzy_never_reuses_one_reference_for_two_photos():
+    photo_students = [
+        _photo_student(1, "Ferrer Soler", "Lucia"),
+        _photo_student(2, "Completamente Distinto", "Alumne"),
+    ]
+    reference_students = [
+        _reference_student(1, "Ferer Soler", "Lucia", "1001"),
+    ]
+
+    result = match_photo_result_to_class(
+        _photo_result(photo_students),
+        _reference_class(reference_students),
+    )
+
+    assert not result.is_valid
+    assert result.matched_photos == 1
+    assert result.method_counts == {"fuzzy": 1}
+    assert result.links[0].photo.ordinal == 1
+    assert result.unmatched_photos == 1
+    assert result.ambiguous_photos == 0
+
+
+def test_name_crosscheck_refuses_weak_given_name_similarity_even_with_same_surname():
+    photo_students = [_photo_student(1, "Garcia Lopez", "Jose")]
+    reference_students = [
+        _reference_student(1, "Garcia Lopez", "Josep", "1001"),
+    ]
+
+    result = match_photo_result_to_class(
+        _photo_result(photo_students),
+        _reference_class(reference_students),
+    )
+
+    assert not result.is_valid
+    assert result.matched_photos == 0
+    assert result.unmatched_photos == 0
+    assert result.ambiguous_photos == 1

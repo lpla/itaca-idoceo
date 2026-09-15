@@ -15,6 +15,12 @@ from .photo_roster import (
 )
 
 
+FUZZY_ACCEPT_SCORE = 0.90
+FUZZY_REVIEW_SCORE = 0.84
+FUZZY_MARGIN = 0.08
+FUZZY_COMPONENT_MIN = 0.82
+
+
 @dataclass(frozen=True)
 class PhotoStudentLink:
     photo: PhotoRosterStudent
@@ -117,6 +123,168 @@ def _reference_key(student: Student, method: str) -> tuple[str, str]:
     return _name_key(student.surnames, student.given_names, method)
 
 
+def _levenshtein_distance(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+    if len(left) > len(right):
+        left, right = right, left
+
+    previous = list(range(len(left) + 1))
+    for row_index, right_char in enumerate(right, start=1):
+        current = [row_index]
+        for column_index, left_char in enumerate(left, start=1):
+            current.append(
+                min(
+                    current[-1] + 1,
+                    previous[column_index] + 1,
+                    previous[column_index - 1] + (left_char != right_char),
+                )
+            )
+        previous = current
+    return previous[-1]
+
+
+def _similarity(left: str, right: str) -> float:
+    if left == right:
+        return 1.0
+    longest = max(len(left), len(right))
+    if longest == 0:
+        return 1.0
+    return 1.0 - (_levenshtein_distance(left, right) / longest)
+
+
+def _fuzzy_score(
+    photo: PhotoRosterStudent,
+    reference: Student,
+) -> tuple[float, float, float]:
+    photo_surname, photo_given = _photo_key(photo, "folded")
+    ref_surname, ref_given = _reference_key(reference, "folded")
+
+    surname_score = _similarity(photo_surname, ref_surname)
+    given_score = _similarity(photo_given, ref_given)
+    full_score = _similarity(
+        f"{photo_surname} {photo_given}",
+        f"{ref_surname} {ref_given}",
+    )
+    score = 0.55 * surname_score + 0.35 * given_score + 0.10 * full_score
+    return score, surname_score, given_score
+
+
+def _fuzzy_pair_is_plausible(
+    photo: PhotoRosterStudent,
+    reference: Student,
+    score: float,
+    surname_score: float,
+    given_score: float,
+) -> bool:
+    photo_surname, photo_given = _photo_key(photo, "folded")
+    ref_surname, ref_given = _reference_key(reference, "folded")
+
+    if not photo_surname or not photo_given or not ref_surname or not ref_given:
+        return False
+    if photo_surname[0] != ref_surname[0] or photo_given[0] != ref_given[0]:
+        return False
+    if score < FUZZY_ACCEPT_SCORE:
+        return False
+
+    one_component_exact = surname_score == 1.0 or given_score == 1.0
+    if one_component_exact:
+        return min(surname_score, given_score) >= FUZZY_COMPONENT_MIN
+
+    return surname_score >= 0.90 and given_score >= 0.90
+
+
+def _fuzzy_match_remaining(
+    photo_students: list[PhotoRosterStudent],
+    reference_students: list[Student],
+    remaining_photo: set[int],
+    remaining_reference: set[int],
+) -> tuple[list[tuple[int, int]], set[int]]:
+    """Devuelve parejas fuzzy seguras y fotos con candidatos cercanos ambiguos.
+
+    Sólo se evalúan alumnos que han sobrevivido a todas las etapas deterministas.
+    Una pareja se acepta si supera el umbral, es la mejor opción de ambos lados
+    y queda separada del segundo candidato por un margen suficiente.
+    """
+    if not remaining_photo or not remaining_reference:
+        return [], set()
+
+    scores: dict[tuple[int, int], tuple[float, float, float]] = {}
+    for photo_index in remaining_photo:
+        for reference_index in remaining_reference:
+            scores[(photo_index, reference_index)] = _fuzzy_score(
+                photo_students[photo_index],
+                reference_students[reference_index],
+            )
+
+    photo_ranked: dict[int, list[tuple[float, int]]] = {}
+    for photo_index in remaining_photo:
+        ranking = sorted(
+            (
+                (scores[(photo_index, reference_index)][0], reference_index)
+                for reference_index in remaining_reference
+            ),
+            reverse=True,
+        )
+        photo_ranked[photo_index] = ranking
+
+    reference_ranked: dict[int, list[tuple[float, int]]] = {}
+    for reference_index in remaining_reference:
+        ranking = sorted(
+            (
+                (scores[(photo_index, reference_index)][0], photo_index)
+                for photo_index in remaining_photo
+            ),
+            reverse=True,
+        )
+        reference_ranked[reference_index] = ranking
+
+    accepted: list[tuple[int, int]] = []
+    ambiguous_photo_indexes: set[int] = set()
+
+    for photo_index, ranking in photo_ranked.items():
+        best_score, reference_index = ranking[0]
+        score, surname_score, given_score = scores[(photo_index, reference_index)]
+
+        if best_score >= FUZZY_REVIEW_SCORE:
+            ambiguous_photo_indexes.add(photo_index)
+
+        ref_ranking = reference_ranked[reference_index]
+        if ref_ranking[0][1] != photo_index:
+            continue
+
+        photo_margin = (
+            best_score - ranking[1][0]
+            if len(ranking) > 1
+            else 1.0
+        )
+        reference_margin = (
+            best_score - ref_ranking[1][0]
+            if len(ref_ranking) > 1
+            else 1.0
+        )
+
+        if photo_margin < FUZZY_MARGIN or reference_margin < FUZZY_MARGIN:
+            continue
+        if not _fuzzy_pair_is_plausible(
+            photo_students[photo_index],
+            reference_students[reference_index],
+            score,
+            surname_score,
+            given_score,
+        ):
+            continue
+
+        accepted.append((photo_index, reference_index))
+        ambiguous_photo_indexes.discard(photo_index)
+
+    return accepted, ambiguous_photo_indexes
+
+
 def _group_key(value: str | None) -> str:
     if not value:
         return ""
@@ -199,6 +367,17 @@ def _match_students(
             remaining_photo.discard(photo_index)
             remaining_reference.discard(reference_index)
 
+    fuzzy_pairs, fuzzy_ambiguous = _fuzzy_match_remaining(
+        photo_students,
+        reference_students,
+        remaining_photo,
+        remaining_reference,
+    )
+    for photo_index, reference_index in fuzzy_pairs:
+        matched[photo_index] = (reference_index, "fuzzy")
+        remaining_photo.discard(photo_index)
+        remaining_reference.discard(reference_index)
+
     ambiguous = 0
     unmatched = 0
     remaining_reference_by_compact: dict[tuple[str, str], list[int]] = defaultdict(list)
@@ -212,7 +391,7 @@ def _match_students(
             _photo_key(photo_students[index], "compact"),
             [],
         )
-        if candidates:
+        if candidates or index in fuzzy_ambiguous:
             ambiguous += 1
         else:
             unmatched += 1
@@ -311,6 +490,7 @@ def print_reference_match(result: PhotoRosterReferenceMatch) -> None:
     print(f"Coincidencia tras normalizar signos/espacios: {counts.get('structural', 0)}")
     print(f"Coincidencia tras normalizar diacríticos: {counts.get('folded', 0)}")
     print(f"Coincidencia tras compactar separadores: {counts.get('compact', 0)}")
+    print(f"Coincidencia fuzzy segura: {counts.get('fuzzy', 0)}")
     print(f"Sin coincidencia: {result.unmatched_photos}")
     print(f"Coincidencias ambiguas: {result.ambiguous_photos}")
     for issue in result.issues:
