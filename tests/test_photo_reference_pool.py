@@ -1,7 +1,10 @@
 from pathlib import Path
 
 from itaca_idoceo.core import ClassResult, PageMetadata, PdfResult, Student
-from itaca_idoceo.photo_reference_pool import match_photo_result_to_references
+from itaca_idoceo.photo_reference_pool import (
+    match_photo_result_to_references,
+    print_reference_pool_match,
+)
 from itaca_idoceo.photo_roster import (
     PhotoRosterPageSummary,
     PhotoRosterResult,
@@ -150,3 +153,53 @@ def test_reference_pool_reports_unresolved_grid_position(tmp_path, monkeypatch):
     assert not result.is_valid
     assert result.match.matched_photos == 1
     assert result.unresolved_positions == [(2, 1, 2, True)]
+    diagnostic = result.unresolved_diagnostics[0]
+    assert diagnostic.ordinal == 2
+    assert diagnostic.best_score is None
+
+
+def test_reference_pool_reports_anonymous_similarity_for_unresolved(tmp_path, monkeypatch, capsys):
+    photo = _photo_result(
+        [
+            _photo_student(1, "Garcia", "Ana"),
+            _photo_student(2, "Martinez", "Alejandro"),
+            _photo_student(3, "Alumno Nuevo", "Sin Referencia"),
+        ]
+    )
+    first = tmp_path / "a.pdf"
+    results = {
+        first: _pdf(
+            first,
+            [
+                _class(
+                    "3ESO A",
+                    [
+                        _reference_student(1, "Garcia", "Ana", "1001"),
+                        # Similar, pero suficientemente distinto para no cruzarse automáticamente.
+                        _reference_student(2, "Martines", "Alexandro", "1002"),
+                        _reference_student(3, "Persona Distinta", "Otra", "1003"),
+                    ],
+                )
+            ],
+        ),
+    }
+    monkeypatch.setattr(photo_reference_pool, "process_pdf", lambda path: results[path])
+
+    result = match_photo_result_to_references(photo, [first])
+
+    assert not result.is_valid
+    assert result.match.matched_photos == 1
+    diagnostics = result.unresolved_diagnostics
+    assert [item.ordinal for item in diagnostics] == [2, 3]
+    assert diagnostics[0].best_score is not None
+    assert diagnostics[0].best_score > diagnostics[1].best_score
+
+    print_reference_pool_match(result)
+    output = capsys.readouterr().out
+    assert "Diagnóstico anónimo de pendientes:" in output
+    assert "#2 (fila 1, columna 2" in output
+    assert "score=" in output
+    # El diagnóstico compartible no debe filtrar PII de ninguno de los dos PDF.
+    assert "Martinez" not in output
+    assert "Martines" not in output
+    assert "1002" not in output
