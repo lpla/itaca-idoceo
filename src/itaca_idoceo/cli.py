@@ -98,6 +98,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
     )
 
+    photo_layout = subparsers.add_parser(
+        "photo-layout-report",
+        help="Genera un informe anonimizado de texto e imágenes para listados con fotos.",
+    )
+    photo_layout.add_argument("pdf", type=Path)
+    photo_layout.add_argument(
+        "-o", "--output",
+        type=Path,
+        default=None,
+        help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
+    )
+
     return parser
 
 
@@ -186,7 +198,19 @@ def main(argv: list[str] | None = None) -> int:
             print(report, end="")
         else:
             args.output.write_text(report, encoding="utf-8")
-            print(f"Informe anonimizado guardado en: {args.output}")
+            print("Informe anonimizado guardado.")
+        return 0
+
+    if args.command == "photo-layout-report":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        from .photo_layout_debug import build_photo_layout_report
+        report = build_photo_layout_report(args.pdf)
+        if args.output is None:
+            print(report, end="")
+        else:
+            args.output.write_text(report, encoding="utf-8")
+            print("Informe anonimizado de listado con fotos guardado.")
         return 0
 
     parser.error("comando no reconocido")
