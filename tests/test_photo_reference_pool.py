@@ -135,6 +135,51 @@ def test_reference_pool_deduplicates_same_nia_across_pdfs(tmp_path, monkeypatch)
     assert result.match.ambiguous_photos == 0
 
 
+def test_reference_pool_rescues_unique_partial_compound_given_name(tmp_path, monkeypatch):
+    photo = _photo_result([_photo_student(1, "Garcia Lopez", "Maria")])
+    first = tmp_path / "a.pdf"
+    results = {
+        first: _pdf(
+            first,
+            [_class("3ESO A", [_reference_student(1, "Garcia Lopez", "Maria Jose", "1001")])],
+        ),
+    }
+    monkeypatch.setattr(photo_reference_pool, "process_pdf", lambda path: results[path])
+
+    result = match_photo_result_to_references(photo, [first])
+
+    assert result.is_valid
+    assert result.match.matched_photos == 1
+    assert result.match.links[0].method == "given_tokens"
+    assert result.match.links[0].reference.nia == "1001"
+
+
+def test_reference_pool_does_not_guess_partial_given_name_when_ambiguous(tmp_path, monkeypatch):
+    photo = _photo_result([_photo_student(1, "Garcia Lopez", "Maria")])
+    first = tmp_path / "a.pdf"
+    results = {
+        first: _pdf(
+            first,
+            [
+                _class(
+                    "3ESO A",
+                    [
+                        _reference_student(1, "Garcia Lopez", "Maria Jose", "1001"),
+                        _reference_student(2, "Garcia Lopez", "Maria Carmen", "1002"),
+                    ],
+                )
+            ],
+        ),
+    }
+    monkeypatch.setattr(photo_reference_pool, "process_pdf", lambda path: results[path])
+
+    result = match_photo_result_to_references(photo, [first])
+
+    assert not result.is_valid
+    assert result.match.matched_photos == 0
+    assert result.unresolved_positions == [(1, 1, 1, True)]
+
+
 def test_reference_pool_reports_unresolved_grid_position(tmp_path, monkeypatch):
     photo = _photo_result(
         [
@@ -199,6 +244,7 @@ def test_reference_pool_reports_anonymous_similarity_for_unresolved(tmp_path, mo
     assert "Diagnóstico anónimo de pendientes:" in output
     assert "#2 (fila 1, columna 2" in output
     assert "score=" in output
+    assert "tokens_nombre=" in output
     # El diagnóstico compartible no debe filtrar PII de ninguno de los dos PDF.
     assert "Martinez" not in output
     assert "Martines" not in output
