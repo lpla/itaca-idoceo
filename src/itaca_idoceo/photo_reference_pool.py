@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import unicodedata
 
 from .core import ClassResult, PageMetadata, Student, process_pdf
 from .photo_match import (
     FUZZY_ACCEPT_SCORE,
     FUZZY_MARGIN,
+    FUZZY_REVIEW_SCORE,
     PhotoRosterReferenceMatch,
+    PhotoStudentLink,
     _fuzzy_pair_is_plausible,
     _fuzzy_score,
     _group_key,
@@ -34,6 +37,10 @@ class UnresolvedDiagnostic:
     initials_match: bool | None
     mutual_best: bool | None
     plausible_pair: bool | None
+    same_surnames: bool | None
+    photo_given_tokens: int | None
+    reference_given_tokens: int | None
+    given_token_subsequence: bool | None
 
 
 @dataclass
@@ -84,6 +91,10 @@ class ReferencePoolMatch:
                     initials_match=None,
                     mutual_best=None,
                     plausible_pair=None,
+                    same_surnames=None,
+                    photo_given_tokens=None,
+                    reference_given_tokens=None,
+                    given_token_subsequence=None,
                 )
                 for ordinal, row, column, has_photo in self.unresolved_positions
             ]
@@ -116,6 +127,10 @@ class ReferencePoolMatch:
                     initials_match=None,
                     mutual_best=None,
                     plausible_pair=None,
+                    same_surnames=None,
+                    photo_given_tokens=None,
+                    reference_given_tokens=None,
+                    given_token_subsequence=None,
                 )
                 for student in remaining_photos
             ]
@@ -174,6 +189,8 @@ class ReferencePoolMatch:
                 surname_score,
                 given_score,
             )
+            photo_tokens = _folded_tokens(photo.given_names)
+            reference_tokens = _folded_tokens(reference.given_names)
 
             diagnostics.append(
                 UnresolvedDiagnostic(
@@ -189,6 +206,13 @@ class ReferencePoolMatch:
                     initials_match=initials_match,
                     mutual_best=mutual_best,
                     plausible_pair=plausible_pair,
+                    same_surnames=photo_surname == ref_surname,
+                    photo_given_tokens=len(photo_tokens),
+                    reference_given_tokens=len(reference_tokens),
+                    given_token_subsequence=_different_length_subsequence(
+                        photo_tokens,
+                        reference_tokens,
+                    ),
                 )
             )
 
@@ -196,6 +220,160 @@ class ReferencePoolMatch:
 
     def reference_by_photo_ordinal(self) -> dict[int, Student]:
         return self.match.reference_by_photo_ordinal()
+
+
+def _folded_tokens(text: str) -> tuple[str, ...]:
+    value = unicodedata.normalize("NFKD", text)
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    value = value.casefold()
+    value = re.sub(r"[^\w]+", " ", value, flags=re.UNICODE)
+    return tuple(token for token in value.split() if token)
+
+
+def _is_subsequence(shorter: tuple[str, ...], longer: tuple[str, ...]) -> bool:
+    if not shorter or len(shorter) > len(longer):
+        return False
+    position = 0
+    for token in longer:
+        if token == shorter[position]:
+            position += 1
+            if position == len(shorter):
+                return True
+    return False
+
+
+def _different_length_subsequence(
+    first: tuple[str, ...],
+    second: tuple[str, ...],
+) -> bool:
+    if not first or not second or len(first) == len(second):
+        return False
+    shorter, longer = (first, second) if len(first) < len(second) else (second, first)
+    return _is_subsequence(shorter, longer)
+
+
+def _given_name_token_candidate(
+    photo: PhotoRosterStudent,
+    reference: Student,
+) -> bool:
+    photo_surname, _photo_given = _photo_key(photo, "folded")
+    reference_surname, _reference_given = _reference_key(reference, "folded")
+    if not photo_surname or photo_surname != reference_surname:
+        return False
+
+    photo_tokens = _folded_tokens(photo.given_names)
+    reference_tokens = _folded_tokens(reference.given_names)
+    return _different_length_subsequence(photo_tokens, reference_tokens)
+
+
+def _rescue_partial_given_names(
+    photo_result: PhotoRosterResult,
+    match: PhotoRosterReferenceMatch,
+) -> PhotoRosterReferenceMatch:
+    """Rescata nombres compuestos parciales cuando los apellidos son idénticos.
+
+    Es una etapa deliberadamente más estricta que fuzzy: sólo acepta que uno de
+    los nombres de pila sea una subsecuencia de palabras completas del otro,
+    exige apellidos idénticos tras normalizar diacríticos/signos y exige una
+    relación 1:1 en ambos sentidos entre todo lo que sigue sin emparejar.
+    """
+    reference_class = match.reference_class
+    if reference_class is None:
+        return match
+
+    matched_photo_ordinals = {link.photo.ordinal for link in match.links}
+    matched_reference_ids = {id(link.reference) for link in match.links}
+    remaining_photos = [
+        student
+        for student in photo_result.students
+        if student.ordinal not in matched_photo_ordinals
+    ]
+    remaining_references = [
+        student
+        for student in reference_class.students
+        if id(student) not in matched_reference_ids
+    ]
+    if not remaining_photos or not remaining_references:
+        return match
+
+    photo_candidates: dict[int, list[int]] = defaultdict(list)
+    reference_candidates: dict[int, list[int]] = defaultdict(list)
+    for photo_index, photo in enumerate(remaining_photos):
+        for reference_index, reference in enumerate(remaining_references):
+            if _given_name_token_candidate(photo, reference):
+                photo_candidates[photo_index].append(reference_index)
+                reference_candidates[reference_index].append(photo_index)
+
+    rescued: list[PhotoStudentLink] = []
+    rescued_photo_indexes: set[int] = set()
+    for photo_index, candidates in photo_candidates.items():
+        if len(candidates) != 1:
+            continue
+        reference_index = candidates[0]
+        if len(reference_candidates[reference_index]) != 1:
+            continue
+        rescued_photo_indexes.add(photo_index)
+        rescued.append(
+            PhotoStudentLink(
+                photo=remaining_photos[photo_index],
+                reference=remaining_references[reference_index],
+                method="given_tokens",
+            )
+        )
+
+    if not rescued:
+        return match
+
+    remaining_after = [
+        photo
+        for index, photo in enumerate(remaining_photos)
+        if index not in rescued_photo_indexes
+    ]
+    rescued_reference_ids = {id(link.reference) for link in rescued}
+    references_after = [
+        reference
+        for reference in remaining_references
+        if id(reference) not in rescued_reference_ids
+    ]
+
+    ambiguous = 0
+    unmatched = 0
+    for photo in remaining_after:
+        compact_key = _photo_key(photo, "compact")
+        compact_candidates = [
+            reference
+            for reference in references_after
+            if _reference_key(reference, "compact") == compact_key
+        ]
+        if compact_candidates:
+            ambiguous += 1
+            continue
+        if references_after:
+            best_score = max(_fuzzy_score(photo, reference)[0] for reference in references_after)
+            if best_score >= FUZZY_REVIEW_SCORE:
+                ambiguous += 1
+                continue
+        unmatched += 1
+
+    links = sorted(
+        [*match.links, *rescued],
+        key=lambda link: link.photo.ordinal,
+    )
+    issues: list[str] = []
+    if unmatched or ambiguous or len(links) != len(photo_result.students):
+        issues.append(
+            "No se ha podido cruzar todo el alumnado del listado con fotos "
+            "de forma inequívoca"
+        )
+
+    return PhotoRosterReferenceMatch(
+        photo_result=photo_result,
+        reference_class=reference_class,
+        links=links,
+        unmatched_photos=unmatched,
+        ambiguous_photos=ambiguous,
+        issues=issues,
+    )
 
 
 def _fallback_student_key(student: Student) -> str:
@@ -322,6 +500,7 @@ def match_photo_result_to_references(
         )
 
     match = match_photo_result_to_class(photo_result, pool)
+    match = _rescue_partial_given_names(photo_result, match)
     return ReferencePoolMatch(
         photo_result=photo_result,
         match=match,
@@ -357,6 +536,7 @@ def print_reference_pool_match(result: ReferencePoolMatch) -> None:
     print(f"Coincidencia tras normalizar signos/espacios: {counts.get('structural', 0)}")
     print(f"Coincidencia tras normalizar diacríticos: {counts.get('folded', 0)}")
     print(f"Coincidencia tras compactar separadores: {counts.get('compact', 0)}")
+    print(f"Coincidencia por nombre de pila parcial: {counts.get('given_tokens', 0)}")
     print(f"Coincidencia fuzzy segura: {counts.get('fuzzy', 0)}")
     print(f"Sin coincidencia: {match.unmatched_photos}")
     print(f"Coincidencias ambiguas: {match.ambiguous_photos}")
@@ -389,13 +569,20 @@ def print_reference_pool_match(result: ReferencePoolMatch) -> None:
                 flags.append("componentes bajo el umbral seguro")
 
             reason = ", ".join(flags) if flags else "candidato cercano no aceptado"
+            extra = ""
+            if item.same_surnames is not None:
+                extra = (
+                    f" apellidos_iguales={'sí' if item.same_surnames else 'no'}"
+                    f" tokens_nombre={item.photo_given_tokens}/{item.reference_given_tokens}"
+                    f" subsecuencia={'sí' if item.given_token_subsequence else 'no'}"
+                )
             print(
                 f"  {location}: score={_format_optional_score(item.best_score)} "
                 f"apellidos={_format_optional_score(item.surname_score)} "
                 f"nombre={_format_optional_score(item.given_score)} "
                 f"margen_alumno={_format_optional_score(item.photo_margin)} "
-                f"margen_referencia={_format_optional_score(item.reference_margin)} "
-                f"-> {reason}"
+                f"margen_referencia={_format_optional_score(item.reference_margin)}"
+                f"{extra} -> {reason}"
             )
 
     for issue in match.issues:
