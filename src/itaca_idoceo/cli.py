@@ -10,6 +10,11 @@ from .integrations import install_integration, uninstall_integration
 from .photo_export import export_photo_roster_cli
 from .photo_reference_pool import check_photo_roster_with_references
 from .photo_roster import check_photo_roster
+from .selection_export import (
+    analyze_selection,
+    export_analyzed_selection,
+    print_selection_export_summary,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +32,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command")
+
+    convert = subparsers.add_parser(
+        "convert",
+        help=(
+            "Exporta en una sola pasada una mezcla de referencias y listados "
+            "actuales con fotos."
+        ),
+    )
+    convert.add_argument(
+        "inputs",
+        type=Path,
+        nargs="+",
+        help="Uno o varios PDF y/o carpetas. Las carpetas se recorren recursivamente.",
+    )
+    convert.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Carpeta de salida. Si se omite se crea iDoceo junto a la selección cuando es posible.",
+    )
+    convert.add_argument(
+        "--no-nia",
+        action="store_true",
+        help=(
+            "Sólo en modo de referencias sin listados con fotos: no incluye NIA en el XLSX. "
+            "Cuando hay listados con fotos el NIA se usa automáticamente si está disponible."
+        ),
+    )
+    convert.add_argument(
+        "--include-repetix",
+        action="store_true",
+        help="Incluye REPETIX cuando está disponible en las referencias.",
+    )
+    convert.add_argument(
+        "--include-materia",
+        action="store_true",
+        help="Incluye MATÈRIA/MÒDUL cuando está disponible en las referencias.",
+    )
 
     check = subparsers.add_parser(
         "check",
@@ -241,6 +285,15 @@ def _collect_reference_pdfs(
     return unique
 
 
+def _default_joint_output(args_inputs: list[Path], analysis) -> Path:
+    if len(args_inputs) == 1 and args_inputs[0].expanduser().is_dir():
+        return args_inputs[0].expanduser() / "iDoceo"
+    parents = {path.parent for path in analysis.pdfs}
+    if len(parents) == 1:
+        return next(iter(parents)) / "iDoceo"
+    return Path.cwd() / "iDoceo"
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
@@ -253,6 +306,23 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command is None:
         return _launch_gui()
+
+    if args.command == "convert":
+        analysis = analyze_selection(args.inputs)
+        if not analysis.pdfs:
+            parser.error("no se han encontrado PDF en la selección")
+        if not analysis.references and not analysis.photo_rosters:
+            parser.error("ningún PDF seleccionado tiene un formato soportado")
+        output_dir = args.output_dir or _default_joint_output(args.inputs, analysis)
+        summary = export_analyzed_selection(
+            analysis,
+            output_dir,
+            include_nia_for_reference=not args.no_nia,
+            include_repetix=args.include_repetix,
+            include_materia=args.include_materia,
+        )
+        print_selection_export_summary(summary)
+        return summary.exit_code
 
     if args.command == "check":
         if not args.pdf.is_file():
