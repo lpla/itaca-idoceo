@@ -71,6 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Incluye MATÈRIA/MÒDUL cuando está disponible en las referencias.",
     )
+    convert.add_argument(
+        "--normalize-names",
+        action="store_true",
+        help=(
+            "Normaliza sólo la salida de nombres en mayúsculas a una capitalización "
+            "más natural (p. ej. DE LA FUENTE -> de la Fuente)."
+        ),
+    )
 
     check = subparsers.add_parser(
         "check",
@@ -320,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             include_nia_for_reference=not args.no_nia,
             include_repetix=args.include_repetix,
             include_materia=args.include_materia,
+            normalize_names=args.normalize_names,
         )
         print_selection_export_summary(summary)
         return summary.exit_code
