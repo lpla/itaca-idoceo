@@ -13,7 +13,13 @@ from itaca_idoceo.photo_roster import (
 import itaca_idoceo.photo_reference_pool as photo_reference_pool
 
 
-def _photo_student(ordinal: int, surnames: str, given_names: str) -> PhotoRosterStudent:
+def _photo_student(
+    ordinal: int,
+    surnames: str,
+    given_names: str,
+    *,
+    name_lines: int = 1,
+) -> PhotoRosterStudent:
     return PhotoRosterStudent(
         page=1,
         ordinal=ordinal,
@@ -27,7 +33,7 @@ def _photo_student(ordinal: int, surnames: str, given_names: str) -> PhotoRoster
         image_y0=0,
         image_x1=10,
         image_y1=10,
-        name_lines=1,
+        name_lines=name_lines,
     )
 
 
@@ -152,6 +158,66 @@ def test_reference_pool_rescues_unique_partial_compound_given_name(tmp_path, mon
     assert result.match.matched_photos == 1
     assert result.match.links[0].method == "given_tokens"
     assert result.match.links[0].reference.nia == "1001"
+
+
+def test_partial_given_name_diagnostic_is_anonymous_and_shows_extraction_shape(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    photo = _photo_result(
+        [_photo_student(1, "Apellido Muy Largo", "Maria", name_lines=2)]
+    )
+    first = tmp_path / "a.pdf"
+    results = {
+        first: _pdf(
+            first,
+            [
+                _class(
+                    "3ESO A",
+                    [
+                        _reference_student(
+                            1,
+                            "Apellido Muy Largo",
+                            "Maria Jose",
+                            "98765432",
+                        )
+                    ],
+                )
+            ],
+        )
+    }
+    monkeypatch.setattr(photo_reference_pool, "process_pdf", lambda path: results[path])
+
+    result = match_photo_result_to_references(photo, [first])
+    diagnostics = result.partial_given_name_diagnostics
+
+    assert len(diagnostics) == 1
+    item = diagnostics[0]
+    assert item.ordinal == 1
+    assert item.photo_name_lines == 2
+    assert item.photo_surname_tokens == 3
+    assert item.reference_surname_tokens == 3
+    assert item.photo_given_tokens == 1
+    assert item.reference_given_tokens == 2
+    assert item.relation == "foto_subsecuencia_referencia"
+    assert not item.given_equal_exact
+    assert not item.given_equal_structural
+    assert not item.given_equal_folded
+    assert not item.given_equal_compact
+
+    print_reference_pool_match(result)
+    output = capsys.readouterr().out
+    assert "Diagnóstico anónimo de coincidencias por nombre parcial:" in output
+    assert "#1 (fila 1, columna 1" in output
+    assert "lineas_nombre_foto=2" in output
+    assert "tokens_apellidos=3/3" in output
+    assert "tokens_nombre=1/2" in output
+    assert "relacion=foto_subsecuencia_referencia" in output
+    assert "Apellido Muy Largo" not in output
+    assert "Maria" not in output
+    assert "Jose" not in output
+    assert "98765432" not in output
 
 
 def test_reference_pool_does_not_guess_partial_given_name_when_ambiguous(tmp_path, monkeypatch):
