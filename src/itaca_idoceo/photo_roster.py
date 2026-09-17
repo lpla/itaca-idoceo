@@ -196,6 +196,19 @@ def _continuation_is_name_text(text: str) -> bool:
     )
 
 
+def _same_name_column(anchor: _RawTextBlock, candidate: _RawTextBlock) -> bool:
+    """Decide si dos líneas pueden pertenecer a la misma celda de nombre.
+
+    Los nombres del informe pueden ir centrados o alineados a la izquierda. Una
+    línea de apellidos muy larga y una segunda línea con un nombre corto pueden
+    tener centros bastante alejados aunque comiencen exactamente en el mismo X.
+    Las columnas observadas están separadas unos 94 pt, así que exigimos cercanía
+    por centro *o* por borde izquierdo, sin utilizar el borde derecho (que una
+    línea larga podría acercar artificialmente a la columna vecina).
+    """
+    return min(abs(candidate.cx - anchor.cx), abs(candidate.x0 - anchor.x0)) <= 44.0
+
+
 def _merge_name_blocks(raw_blocks: list[_RawTextBlock]) -> list[NameBlock]:
     """Reconstruye nombres que el PDF haya partido en varios bloques de texto.
 
@@ -230,9 +243,7 @@ def _merge_name_blocks(raw_blocks: list[_RawTextBlock]) -> list[NameBlock]:
                     continue
                 if candidate.y0 - current_y1 > max_gap:
                     continue
-                # En los informes observados las seis columnas están separadas
-                # unos 94 pt; 44 pt mantiene la continuación dentro de su celda.
-                if abs(candidate.cx - anchor.cx) > 44.0:
+                if not _same_name_column(anchor, candidate):
                     continue
                 candidates.append(candidate)
 
@@ -242,7 +253,7 @@ def _merge_name_blocks(raw_blocks: list[_RawTextBlock]) -> list[NameBlock]:
             candidates.sort(
                 key=lambda item: (
                     max(0.0, item.y0 - current_y1),
-                    abs(item.cx - anchor.cx),
+                    min(abs(item.cx - anchor.cx), abs(item.x0 - anchor.x0)),
                     item.x0,
                 )
             )
