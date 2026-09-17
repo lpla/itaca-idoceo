@@ -10,6 +10,7 @@ def test_convert_accepts_multiple_files_and_folders():
             "photo-b.pdf",
             "--include-repetix",
             "--include-materia",
+            "--normalize-names",
         ]
     )
 
@@ -21,4 +22,5 @@ def test_convert_accepts_multiple_files_and_folders():
     ]
     assert args.include_repetix is True
     assert args.include_materia is True
+    assert args.normalize_names is True
     assert args.no_nia is False
