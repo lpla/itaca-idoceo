@@ -1,5 +1,16 @@
 # Changelog
 
+## Próxima 0.8.0
+
+- Valida de extremo a extremo en iDoceo la creación de clases, importación de alumnado y asociación masiva de fotografías por NIA/ID.
+- Actualiza las instrucciones de importación al flujo actual de iDoceo y genera `IMPORTAR_EN_IDOCEO.txt` en la carpeta general de salida.
+- Documenta la actualización segura de una clase existente: iDoceo puede añadir nuevos alumnos al volver a importar el XLSX completo, conservando el alumnado ya reconocido y sus datos del cuaderno.
+- Aclara que una reimportación no debe interpretarse como sincronización automática de bajas.
+- Añade la opción de presentación **Normalizar nombres** en la GUI y `--normalize-names` en `itaca-idoceo convert`.
+- La normalización se aplica sólo a la salida, nunca al detector ni al matching; conserva Unicode, guiones/apóstrofos, capitalización ya explícita y partículas ibéricas frecuentes como `de`, `del`, `de la`, `da` o `dos`.
+- Mantiene alineados los nombres normalizados del XLSX y los nombres de archivo de `fotos_por_nombre/`.
+- Añade pruebas de regresión para la normalización, la guía de importación y el flujo de sólo referencias.
+
 ## 0.8.0a1
 
 - Añade soporte inicial para listados actuales de alumnado con fotografías, incluidos nombres multilínea y casillas «Fotografía no disponible».
@@ -84,7 +95,7 @@
 - Una repetición de la cabecera `CURS` por paginación no fuerza una subsecuencia nueva si `ORDE` continúa.
 - Se marca como incidencia un reinicio de `ORDE` en 1 sin una nueva fila CURS.
 - Los detalles locales conservan los distintos valores `CURS` detectados dentro del grupo.
-- Se añaden pruebas con el caso realista `1..21` + `1..11` de Bachillerato.
+- Se añaden pruebas para Bachillerato y segmentación/validación por grupos de FP.
 
 ## 0.6.0a6
 
