@@ -4,6 +4,8 @@ Convierte **localmente** listados PDF de alumnado de ITACA (Generalitat Valencia
 
 **Descarga e instalación:** [PyPI](https://pypi.org/project/itaca-idoceo/) · **Versiones:** [GitHub Releases](https://github.com/lpla/itaca-idoceo/releases)
 
+Desarrollado por **[Leopoldo Pla Sempere](https://lpla.github.io)** · [Código fuente y soporte en GitHub](https://github.com/lpla/itaca-idoceo)
+
 > [!IMPORTANT]
 > La herramienta no sube PDF, fotografías ni datos del alumnado a ningún servicio. Todo el procesamiento se realiza íntegramente en el ordenador donde se ejecuta.
 
@@ -164,7 +166,7 @@ itaca-idoceo convert carpeta_con_referencias/ carpeta_con_listados_actuales/ \
 
 **No compartas el PDF real, el XLSX generado ni las fotografías.** Los listados pueden contener datos personales de menores.
 
-En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en una incidencia de GitHub. El diagnóstico está diseñado para omitir nombres, NIA, centro, grupo, tutor, materias, fotografías y rutas locales.
+En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y después **Ayuda → Informar de un problema en GitHub…**. El diagnóstico está diseñado para omitir nombres, NIA, centro, grupo, tutor, materias, fotografías y rutas locales.
 
 [Cómo informar de un problema de forma segura](SECURITY.md)
 
@@ -203,4 +205,4 @@ Consulta [SECURITY.md](SECURITY.md) antes de abrir una incidencia.
 
 ## Licencia
 
-Este proyecto se distribuye bajo **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. El texto completo se incluye en [LICENSE]. PyMuPDF se distribuye bajo AGPL o licencia comercial, por lo que este proyecto adopta AGPL-3.0 para su distribución de código abierto.
+Este proyecto se distribuye bajo **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. El texto completo se incluye en [LICENSE](LICENSE). PyMuPDF se distribuye bajo AGPL o licencia comercial, por lo que este proyecto adopta AGPL-3.0 para su distribución de código abierto.
