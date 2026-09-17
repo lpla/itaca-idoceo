@@ -156,6 +156,8 @@ def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, mon
     assert result.match_field == "Nombre"
     assert result.automatic_matches == 1
     assert result.manual_matches == 0
+    assert result.photos_dir.name == "fotos_por_nombre"
+    assert result.name_photos_dir == result.photos_dir
 
     workbook = load_workbook(result.xlsx_path)
     sheet = workbook.active
@@ -168,8 +170,8 @@ def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, mon
     assert (result.photos_dir / photos[0]).stat().st_size > 0
 
     guide = result.guide_path.read_text(encoding="utf-8")
-    assert "Nombre como criterio" in guide
-    assert "emparejado por nombre puede fallar" in guide
+    assert "FOTOS POR NOMBRE" in guide
+    assert "asociación por nombre puede fallar" in guide
     assert "sin fotografía disponible en el PDF: 1" in guide
 
 
@@ -224,6 +226,8 @@ def test_export_with_references_uses_nia_for_xlsx_and_photo_names(tmp_path, monk
     assert result.match_field == "NIA"
     assert result.automatic_matches == 1
     assert result.manual_matches == 0
+    assert result.photos_dir.name == "fotos_por_nia"
+    assert result.id_photos_dir == result.photos_dir
 
     workbook = load_workbook(result.xlsx_path)
     sheet = workbook.active
@@ -246,7 +250,7 @@ def test_export_with_references_uses_nia_for_xlsx_and_photo_names(tmp_path, monk
 
     guide = result.guide_path.read_text(encoding="utf-8")
     assert "NIA al campo ID / Student ID" in guide
-    assert "Selecciona ID como criterio" in guide
+    assert "FOTOS POR NIA" in guide
 
 
 def test_export_with_references_allows_one_truly_unmatched_student(tmp_path, monkeypatch):
@@ -303,7 +307,7 @@ def test_export_with_references_allows_one_truly_unmatched_student(tmp_path, mon
     assert "NIA vacío" in guide
 
 
-def test_export_unmatched_student_with_photo_goes_to_manual_folder(tmp_path, monkeypatch):
+def test_export_unmatched_student_with_photo_goes_to_name_folder(tmp_path, monkeypatch):
     pdf_path = tmp_path / "grupo_materia.pdf"
     reference_pdf = tmp_path / "referencia.pdf"
     reference_pdf.write_bytes(b"dummy")
@@ -343,5 +347,10 @@ def test_export_unmatched_student_with_photo_goes_to_manual_folder(tmp_path, mon
     assert result.automatic_matches == 1
     assert result.manual_matches == 1
     assert result.manual_photos_dir is not None
+    assert result.manual_photos_dir.name == "fotos_por_nombre"
+    assert result.name_photos_dir == result.manual_photos_dir
     assert [path.name for path in result.photos_dir.glob("*.png")] == ["12345678.png"]
     assert [path.name for path in result.manual_photos_dir.glob("*.png")] == ["PEREZ, BEA.png"]
+
+    guide = result.guide_path.read_text(encoding="utf-8")
+    assert "FOTOS POR NOMBRE — COMPROBAR" in guide
