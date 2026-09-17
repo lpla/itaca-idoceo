@@ -271,15 +271,17 @@ def export_analyzed_selection(
     if analysis.photo_rosters:
         parsed_references = list(analysis.references.values())
         for photo_pdf in sorted(analysis.photo_rosters, key=lambda path: str(path).casefold()):
+            photo_result = analysis.photo_rosters[photo_pdf]
+            group_name = photo_result.group_code or photo_result.group_raw or photo_pdf.stem
             bundle = _unique_directory(
-                output_dir / (safe_filename_component(photo_pdf.stem) + "_idoceo")
+                output_dir / (safe_filename_component(group_name) + "_idoceo")
             )
             try:
                 result = export_photo_roster(
                     photo_pdf,
                     bundle,
                     reference_results=parsed_references,
-                    photo_result=analysis.photo_rosters[photo_pdf],
+                    photo_result=photo_result,
                     include_repetix=include_repetix,
                     include_materia=include_materia,
                 )
@@ -290,7 +292,7 @@ def export_analyzed_selection(
                         kind="photo",
                         status=STATUS_REVIEW,
                         output=None,
-                        students=len(analysis.photo_rosters[photo_pdf].students),
+                        students=len(photo_result.students),
                         message=str(exc),
                     )
                 )
