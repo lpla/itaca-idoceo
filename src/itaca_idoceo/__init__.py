@@ -1,6 +1,6 @@
 """ITACA → iDoceo: conversión local de listados de alumnado."""
 
-__version__ = "0.8.0a1"
+__version__ = "0.8.0"
 
 # `core.SCRIPT_VERSION` sólo se conserva para el manifiesto del comando batch
 # heredado. Sincronizarlo en tiempo de importación evita que ese resumen muestre
