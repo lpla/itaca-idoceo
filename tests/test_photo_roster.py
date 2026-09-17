@@ -9,11 +9,13 @@ from itaca_idoceo.photo_roster import (
     PhotoRosterPageSummary,
     PhotoRosterResult,
     PhotoRosterStudent,
+    _RawTextBlock,
     _add_missing_photo_slots,
     _cluster_rows,
     _extract_group_metadata,
     _extract_missing_photo_blocks,
     _is_missing_photo_text,
+    _merge_name_blocks,
     _pair_row,
     _parse_name_text,
     print_photo_roster_check,
@@ -39,6 +41,81 @@ def test_parse_name_text_accepts_wrapped_name_content():
         "García Pérez",
         "Ana María",
     )
+
+
+def test_merge_name_blocks_adds_given_name_from_separate_visual_line():
+    raw = [
+        _RawTextBlock(
+            block=10,
+            text="Apellido Muy Largo, Ana",
+            x0=120,
+            y0=280,
+            x1=190,
+            y1=286,
+            line_count=1,
+            line_height=6,
+        ),
+        _RawTextBlock(
+            block=11,
+            text="María",
+            x0=139,
+            y0=287,
+            x1=171,
+            y1=293,
+            line_count=1,
+            line_height=6,
+        ),
+        # Otra celda de la misma fila: no debe absorberse pese a estar cerca en Y.
+        _RawTextBlock(
+            block=12,
+            text="Otro, Nombre",
+            x0=214,
+            y0=280,
+            x1=285,
+            y1=286,
+            line_count=1,
+            line_height=6,
+        ),
+    ]
+
+    names = _merge_name_blocks(raw)
+
+    assert [name.full_name for name in names] == [
+        "Apellido Muy Largo, Ana María",
+        "Otro, Nombre",
+    ]
+    assert names[0].line_count == 2
+
+
+def test_merge_name_blocks_can_complete_anchor_that_ends_at_comma():
+    raw = [
+        _RawTextBlock(
+            block=20,
+            text="Apellidos Extraordinariamente Largos,",
+            x0=25,
+            y0=403,
+            x1=105,
+            y1=409,
+            line_count=1,
+            line_height=6,
+        ),
+        _RawTextBlock(
+            block=21,
+            text="Nombre",
+            x0=43,
+            y0=410,
+            x1=87,
+            y1=416,
+            line_count=1,
+            line_height=6,
+        ),
+    ]
+
+    names = _merge_name_blocks(raw)
+
+    assert len(names) == 1
+    assert names[0].full_name == "Apellidos Extraordinariamente Largos, Nombre"
+    assert names[0].line_count == 2
 
 
 def test_cluster_rows_tolerates_one_photo_with_different_vertical_geometry():
