@@ -93,7 +93,12 @@ def collect_pdf_paths(inputs: list[Path]) -> list[Path]:
 
 
 def analyze_selection(inputs: list[Path]) -> SelectionAnalysis:
-    """Clasifica automáticamente PDF tabulares, listados con fotos y otros PDF."""
+    """Clasifica automáticamente PDF tabulares, listados con fotos y otros PDF.
+
+    Cada PDF se parsea una sola vez como referencia. Sólo si no es una referencia
+    tabular se intenta el detector de listado fotográfico. Los resultados se
+    conservan para reutilizarlos durante toda la exportación conjunta.
+    """
     pdfs = collect_pdf_paths(inputs)
     analysis = SelectionAnalysis(pdfs=pdfs)
 
@@ -216,6 +221,15 @@ def _write_local_summary(summary: SelectionExportSummary) -> None:
                 "",
             ]
         )
+    else:
+        lines.extend(
+            [
+                "No hay listados actuales de materia en esta selección. Por tanto se exportan",
+                "todos los grupos válidos encontrados en las referencias. La herramienta no",
+                "puede saber cuáles imparte el profesor sin esos listados actuales.",
+                "",
+            ]
+        )
 
     for index, item in enumerate(summary.items, start=1):
         lines.append(f"Resultado {index}: {item.status}")
@@ -255,7 +269,7 @@ def export_analyzed_selection(
     items: list[SelectionExportItem] = []
 
     if analysis.photo_rosters:
-        references = list(analysis.references)
+        parsed_references = list(analysis.references.values())
         for photo_pdf in sorted(analysis.photo_rosters, key=lambda path: str(path).casefold()):
             bundle = _unique_directory(
                 output_dir / (safe_filename_component(photo_pdf.stem) + "_idoceo")
@@ -264,7 +278,8 @@ def export_analyzed_selection(
                 result = export_photo_roster(
                     photo_pdf,
                     bundle,
-                    reference_pdfs=references,
+                    reference_results=parsed_references,
+                    photo_result=analysis.photo_rosters[photo_pdf],
                     include_repetix=include_repetix,
                     include_materia=include_materia,
                 )
