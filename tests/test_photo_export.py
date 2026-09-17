@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 import itaca_idoceo.photo_export as photo_export
 from itaca_idoceo.core import ClassResult, PageMetadata, Student
 from itaca_idoceo.photo_match import PhotoRosterReferenceMatch, PhotoStudentLink
+from itaca_idoceo.photo_reference_pool import ReferencePoolMatch
 from itaca_idoceo.photo_roster import (
     PhotoRosterPageSummary,
     PhotoRosterResult,
@@ -50,7 +51,7 @@ def _make_source_pdf(path) -> int:
     return xref
 
 
-def _roster_result(pdf_path, xref: int) -> PhotoRosterResult:
+def _roster_result(pdf_path, xref: int, *, second_has_photo: bool = False) -> PhotoRosterResult:
     return PhotoRosterResult(
         source=pdf_path,
         page_count=1,
@@ -78,7 +79,7 @@ def _roster_result(pdf_path, xref: int) -> PhotoRosterResult:
                 full_name="PEREZ, BEA",
                 surnames="PEREZ",
                 given_names="BEA",
-                xref=0,
+                xref=xref if second_has_photo else 0,
                 image_x0=119,
                 image_y0=178,
                 image_x1=196,
@@ -86,7 +87,17 @@ def _roster_result(pdf_path, xref: int) -> PhotoRosterResult:
                 name_lines=1,
             ),
         ],
-        pages=[PhotoRosterPageSummary(1, 1, 2, 1, 2, 0, 1)],
+        pages=[
+            PhotoRosterPageSummary(
+                1,
+                2 if second_has_photo else 1,
+                2,
+                1,
+                2,
+                0,
+                0 if second_has_photo else 1,
+            )
+        ],
         issues=[],
         group_raw="3ESO A - 3ESO A",
         group_code="3ESO A",
@@ -114,6 +125,19 @@ def _reference_student(
         visual_y=float(ordinal),
         repetix=repetix,
         materia=materia,
+    )
+
+
+def _pool(roster, match, *, unique_students: int = 2) -> ReferencePoolMatch:
+    return ReferencePoolMatch(
+        photo_result=roster,
+        match=match,
+        input_files=2,
+        usable_files=2,
+        skipped_files=0,
+        valid_classes=2,
+        unique_students=unique_students,
+        same_group_students=unique_students,
     )
 
 
@@ -149,31 +173,18 @@ def test_export_photo_roster_keeps_student_without_available_photo(tmp_path, mon
     assert "sin fotografía disponible en el PDF: 1" in guide
 
 
-def test_export_with_reference_uses_nia_for_xlsx_and_photo_names(tmp_path, monkeypatch):
+def test_export_with_references_uses_nia_for_xlsx_and_photo_names(tmp_path, monkeypatch):
     pdf_path = tmp_path / "grupo_materia.pdf"
-    reference_pdf = tmp_path / "listado_tabular.pdf"
-    reference_pdf.write_bytes(b"dummy")
+    references = [tmp_path / "a.pdf", tmp_path / "b.pdf"]
+    for path in references:
+        path.write_bytes(b"dummy")
     output_dir = tmp_path / "salida"
     xref = _make_source_pdf(pdf_path)
     roster = _roster_result(pdf_path, xref)
     monkeypatch.setattr(photo_export, "detect_photo_roster", lambda _: roster)
 
-    first = _reference_student(
-        1,
-        "12345678",
-        "GARCIA LOPEZ",
-        "ANA",
-        "R",
-        "MUSICA",
-    )
-    second = _reference_student(
-        2,
-        "87654321",
-        "PEREZ",
-        "BEA",
-        "",
-        "MUSICA",
-    )
+    first = _reference_student(1, "12345678", "GARCIA LOPEZ", "ANA", "R", "MUSICA")
+    second = _reference_student(2, "87654321", "PEREZ", "BEA", "", "MUSICA")
     reference_class = ClassResult(
         source=Path("listado_tabular.pdf"),
         metadata=PageMetadata(group_code="3ESO A"),
@@ -193,19 +204,21 @@ def test_export_with_reference_uses_nia_for_xlsx_and_photo_names(tmp_path, monke
     )
     monkeypatch.setattr(
         photo_export,
-        "match_photo_result_to_reference",
-        lambda _roster, _reference: match,
+        "match_photo_result_to_references",
+        lambda _roster, _references: _pool(roster, match),
     )
 
     result = photo_export.export_photo_roster(
         pdf_path,
         output_dir,
-        reference_pdf=reference_pdf,
+        reference_pdfs=references,
         include_repetix=True,
         include_materia=True,
     )
 
     assert result.students == 2
+    assert result.matched_students == 2
+    assert result.unmatched_students == 0
     assert result.photos == 1
     assert result.missing_photos == 1
     assert result.match_field == "NIA"
@@ -234,3 +247,101 @@ def test_export_with_reference_uses_nia_for_xlsx_and_photo_names(tmp_path, monke
     guide = result.guide_path.read_text(encoding="utf-8")
     assert "NIA al campo ID / Student ID" in guide
     assert "Selecciona ID como criterio" in guide
+
+
+def test_export_with_references_allows_one_truly_unmatched_student(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "grupo_materia.pdf"
+    reference_pdf = tmp_path / "referencia.pdf"
+    reference_pdf.write_bytes(b"dummy")
+    output_dir = tmp_path / "salida"
+    xref = _make_source_pdf(pdf_path)
+    roster = _roster_result(pdf_path, xref)
+    monkeypatch.setattr(photo_export, "detect_photo_roster", lambda _: roster)
+
+    first = _reference_student(1, "12345678", "GARCIA LOPEZ", "ANA", "R", "MUSICA")
+    reference_class = ClassResult(
+        source=reference_pdf,
+        metadata=PageMetadata(group_code="3ESO A"),
+        students=[first],
+        issues=[],
+    )
+    match = PhotoRosterReferenceMatch(
+        photo_result=roster,
+        reference_class=reference_class,
+        links=[PhotoStudentLink(roster.students[0], first, "exact")],
+        unmatched_photos=1,
+        ambiguous_photos=0,
+        issues=["No se ha podido cruzar todo el alumnado del listado con fotos de forma inequívoca"],
+    )
+    monkeypatch.setattr(
+        photo_export,
+        "match_photo_result_to_references",
+        lambda _roster, _references: _pool(roster, match, unique_students=1),
+    )
+
+    result = photo_export.export_photo_roster(
+        pdf_path,
+        output_dir,
+        reference_pdfs=[reference_pdf],
+        include_repetix=True,
+    )
+
+    assert result.matched_students == 1
+    assert result.unmatched_students == 1
+    assert result.automatic_matches == 1
+    assert result.manual_matches == 0
+    assert result.manual_photos_dir is None
+
+    workbook = load_workbook(result.xlsx_path)
+    sheet = workbook.active
+    assert sheet["C2"].value == "12345678"
+    assert sheet["C3"].value is None
+    assert sheet["D3"].value is None
+
+    guide = result.guide_path.read_text(encoding="utf-8")
+    assert "Alumnos sin coincidencia inequívoca en las referencias: 1" in guide
+    assert "NIA vacío" in guide
+
+
+def test_export_unmatched_student_with_photo_goes_to_manual_folder(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "grupo_materia.pdf"
+    reference_pdf = tmp_path / "referencia.pdf"
+    reference_pdf.write_bytes(b"dummy")
+    output_dir = tmp_path / "salida"
+    xref = _make_source_pdf(pdf_path)
+    roster = _roster_result(pdf_path, xref, second_has_photo=True)
+    monkeypatch.setattr(photo_export, "detect_photo_roster", lambda _: roster)
+
+    first = _reference_student(1, "12345678", "GARCIA LOPEZ", "ANA", "", "MUSICA")
+    reference_class = ClassResult(
+        source=reference_pdf,
+        metadata=PageMetadata(group_code="3ESO A"),
+        students=[first],
+        issues=[],
+    )
+    match = PhotoRosterReferenceMatch(
+        photo_result=roster,
+        reference_class=reference_class,
+        links=[PhotoStudentLink(roster.students[0], first, "exact")],
+        unmatched_photos=1,
+        ambiguous_photos=0,
+        issues=["incomplete"],
+    )
+    monkeypatch.setattr(
+        photo_export,
+        "match_photo_result_to_references",
+        lambda _roster, _references: _pool(roster, match, unique_students=1),
+    )
+
+    result = photo_export.export_photo_roster(
+        pdf_path,
+        output_dir,
+        reference_pdfs=[reference_pdf],
+    )
+
+    assert result.photos == 2
+    assert result.automatic_matches == 1
+    assert result.manual_matches == 1
+    assert result.manual_photos_dir is not None
+    assert [path.name for path in result.photos_dir.glob("*.png")] == ["12345678.png"]
+    assert [path.name for path in result.manual_photos_dir.glob("*.png")] == ["PEREZ, BEA.png"]
