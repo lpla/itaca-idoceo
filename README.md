@@ -10,6 +10,9 @@ Convierte **localmente** listados PDF de alumnado de ITACA (Generalitat Valencia
 > [!NOTE]
 > Este es un proyecto independiente. No está afiliado, respaldado ni mantenido por la Generalitat Valenciana ni por iDoceo.
 
+> [!WARNING]
+> La versión `0.8.0a1` es una **prerelease para testers** de la nueva importación conjunta con fotografías. Debe instalarse explícitamente con `pipx install --force 'itaca-idoceo==0.8.0a1'`. La importación real de fotografías por ID/NIA en iDoceo todavía está pendiente de validación final en dispositivo.
+
 ## ¿Qué listados admite?
 
 La herramienta reconoce dos tipos de entrada que pueden añadirse **juntos en una sola selección**:
@@ -36,7 +39,7 @@ Sigue la guía de tu sistema operativo:
 - [macOS](docs/INSTALL.md#macos)
 - [LliureX / Ubuntu y derivados](docs/INSTALL.md#lliurex--ubuntu-y-derivados)
 
-Si ya tienes Python 3.12 o posterior y `pipx`, la instalación es simplemente:
+Si ya tienes Python 3.12 o posterior y `pipx`, la instalación estable es simplemente:
 
 ```text
 pipx install itaca-idoceo
@@ -99,27 +102,19 @@ Un mismo PDF tabular puede contener varios grupos. También se admiten casos de 
 
 ## Acción rápida, GUI y terminal usan el mismo flujo
 
-Puedes seleccionar simultáneamente varios PDF o una carpeta completa. Tanto la interfaz gráfica como la Acción rápida cargan toda la selección en la misma ventana y la procesan conjuntamente.
-
-Desde terminal, el equivalente es:
+Puedes abrir la aplicación normalmente, arrastrar archivos/carpetas o usar la Acción rápida del sistema sobre una selección múltiple. En terminal, el equivalente es:
 
 ```text
-itaca-idoceo convert carpeta_con_todos_los_pdf/
+itaca-idoceo convert carpeta_con_referencias/ carpeta_con_listados_actuales/ -o salida/
 ```
 
-También puedes mezclar explícitamente archivos y carpetas:
-
-```text
-itaca-idoceo convert referencias/ materia_1.pdf materia_2.pdf -o salida/
-```
-
-La línea de comandos avanzada se documenta en [docs/ADVANCED.md](docs/ADVANCED.md).
+`convert` busca PDF recursivamente dentro de las carpetas indicadas, detecta automáticamente ambos formatos y prepara toda la salida en una ejecución.
 
 ## Si algo no funciona
 
 **No compartas el PDF real, el XLSX generado ni las fotografías.** Los listados pueden contener datos personales de menores.
 
-En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en una incidencia de GitHub. El diagnóstico está diseñado para omitir nombres, NIA, centro, grupo, tutor, materias y rutas locales.
+En la aplicación usa **Ayuda → Copiar diagnóstico anonimizado** y pega ese texto en una incidencia de GitHub. El diagnóstico está diseñado para omitir nombres, NIA, centro, grupo, tutor, materias, fotografías y rutas locales.
 
 [Cómo informar de un problema de forma segura](SECURITY.md)
 
@@ -146,7 +141,7 @@ pipx uninstall itaca-idoceo
 
 ## Uso avanzado
 
-La mayoría de usuarios no necesita esta parte. La línea de comandos, los comandos históricos de extracción y los informes de diagnóstico están documentados aparte:
+La mayoría de usuarios no necesita esta parte. La línea de comandos, el procesamiento por lotes y los diagnósticos técnicos están documentados aparte:
 
 [Uso avanzado y diagnóstico técnico](docs/ADVANCED.md)
 
@@ -158,4 +153,4 @@ Consulta [SECURITY.md](SECURITY.md) antes de abrir una incidencia.
 
 ## Licencia
 
-Este proyecto se distribuye bajo **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. El texto completo se incluye en [LICENSE](LICENSE). PyMuPDF se distribuye bajo AGPL o licencia comercial, por lo que este proyecto adopta AGPL-3.0 para su distribución de código abierto.
+Este proyecto se distribuye bajo **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. El texto completo se incluye en [LICENSE]. PyMuPDF se distribuye bajo AGPL o licencia comercial, por lo que este proyecto adopta AGPL-3.0 para su distribución de código abierto.
