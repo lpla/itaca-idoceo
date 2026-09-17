@@ -10,6 +10,11 @@ from .core import (
     unique_output_path,
     write_idoceo_xlsx,
 )
+from .export_postprocess import (
+    normalize_name_photo_filenames,
+    normalize_xlsx_names,
+)
+from .idoceo_instructions import build_import_instructions
 from .photo_export import PhotoExportResult, export_photo_roster
 from .photo_roster import PhotoRosterResult, detect_photo_roster
 
@@ -58,6 +63,8 @@ class SelectionExportSummary:
     unsupported_pdfs: int
     items: list[SelectionExportItem]
     summary_path: Path
+    import_guide_path: Path
+    normalize_names: bool = False
 
     @property
     def blocking_items(self) -> int:
@@ -209,6 +216,7 @@ def _write_local_summary(summary: SelectionExportSummary) -> None:
         f"PDF de referencia: {summary.reference_pdfs}",
         f"PDF actuales con fotos: {summary.photo_pdfs}",
         f"PDF no utilizados: {summary.unsupported_pdfs}",
+        f"Normalización de nombres: {'SÍ' if summary.normalize_names else 'NO'}",
         "",
     ]
 
@@ -247,6 +255,13 @@ def _write_local_summary(summary: SelectionExportSummary) -> None:
             lines.append(f"  Nota: {item.message}")
         lines.append("")
 
+    lines.extend(
+        [
+            "Consulta IMPORTAR_EN_IDOCEO.txt para crear una clase nueva, actualizar una",
+            "clase existente sin sustituir la evaluación e importar las fotos masivamente.",
+            "",
+        ]
+    )
     summary.summary_path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -257,6 +272,7 @@ def export_analyzed_selection(
     include_nia_for_reference: bool = True,
     include_repetix: bool = False,
     include_materia: bool = False,
+    normalize_names: bool = False,
 ) -> SelectionExportSummary:
     """Exporta toda una selección en una sola pasada.
 
@@ -264,6 +280,9 @@ def export_analyzed_selection(
     clases de salida y todos los PDF tabulares seleccionados actúan como una
     piscina común de referencias. Si no hay listados con fotos, se exportan los
     grupos de los PDF tabulares como hasta ahora.
+
+    La normalización de nombres es exclusivamente una transformación de salida:
+    el matching y la detección siguen trabajando con el texto original del PDF.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     items: list[SelectionExportItem] = []
@@ -285,6 +304,9 @@ def export_analyzed_selection(
                     include_repetix=include_repetix,
                     include_materia=include_materia,
                 )
+                if normalize_names:
+                    normalize_xlsx_names(result.xlsx_path)
+                    normalize_name_photo_filenames(result.name_photos_dir)
             except Exception as exc:
                 items.append(
                     SelectionExportItem(
@@ -315,6 +337,8 @@ def export_analyzed_selection(
                         include_repetix=include_repetix,
                         include_materia=include_materia,
                     )
+                    if normalize_names:
+                        normalize_xlsx_names(output)
                 except Exception as exc:
                     items.append(
                         SelectionExportItem(
@@ -343,6 +367,7 @@ def export_analyzed_selection(
                 )
 
     summary_path = output_dir / "RESUMEN_EXPORTACION.txt"
+    import_guide_path = output_dir / "IMPORTAR_EN_IDOCEO.txt"
     summary = SelectionExportSummary(
         output_dir=output_dir,
         mode=analysis.mode,
@@ -352,8 +377,17 @@ def export_analyzed_selection(
         unsupported_pdfs=len(analysis.unsupported),
         items=items,
         summary_path=summary_path,
+        import_guide_path=import_guide_path,
+        normalize_names=normalize_names,
     )
     _write_local_summary(summary)
+    import_guide_path.write_text(
+        build_import_instructions(
+            has_photos=bool(analysis.photo_rosters),
+            normalize_names=normalize_names,
+        ),
+        encoding="utf-8",
+    )
     return summary
 
 
@@ -364,6 +398,7 @@ def export_selection(
     include_nia_for_reference: bool = True,
     include_repetix: bool = False,
     include_materia: bool = False,
+    normalize_names: bool = False,
 ) -> SelectionExportSummary:
     analysis = analyze_selection(inputs)
     return export_analyzed_selection(
@@ -372,6 +407,7 @@ def export_selection(
         include_nia_for_reference=include_nia_for_reference,
         include_repetix=include_repetix,
         include_materia=include_materia,
+        normalize_names=normalize_names,
     )
 
 
@@ -382,6 +418,7 @@ def print_selection_export_summary(summary: SelectionExportSummary) -> None:
     print(f"PDF de referencia: {summary.reference_pdfs}")
     print(f"Listados actuales con fotos: {summary.photo_pdfs}")
     print(f"PDF no utilizados: {summary.unsupported_pdfs}")
+    print("Nombres normalizados: " + ("SÍ" if summary.normalize_names else "NO"))
     if summary.mode == "photo":
         print("Modo: los listados actuales con fotos determinan el alumnado final")
     else:
@@ -405,3 +442,4 @@ def print_selection_export_summary(summary: SelectionExportSummary) -> None:
     print(f"Resultados con aviso: {summary.warning_items}")
     print(f"Resultados bloqueados: {summary.blocking_items}")
     print("Generado: RESUMEN_EXPORTACION.txt")
+    print("Generado: IMPORTAR_EN_IDOCEO.txt")

@@ -32,7 +32,23 @@ Campos opcionales:
 itaca-idoceo convert carpeta/ --include-repetix --include-materia
 ```
 
-`convert` genera `RESUMEN_EXPORTACION.txt` en la carpeta de salida. La salida normal de terminal sólo muestra contadores y estados, no nombres, NIA ni rutas locales.
+Capitalización opcional de nombres y apellidos:
+
+```text
+itaca-idoceo convert carpeta/ --normalize-names
+```
+
+`--normalize-names` se aplica **después** de detectar y cruzar el alumnado. No interviene en el matching: sólo modifica las columnas `Apellidos` y `Nombre` de la salida y, cuando sea necesario asociar una foto por nombre, su nombre de archivo. Conserva palabras que ya contienen minúsculas, guiones y apóstrofos, y mantiene en minúscula partículas ibéricas frecuentes como `de`, `del`, `de la`, `da` o `dos`. Al ser una heurística de presentación puede tener excepciones.
+
+Si una clase se va a volver a importar posteriormente sobre una clase ya existente en iDoceo, conviene mantener siempre el mismo valor de esta opción, porque iDoceo utiliza el nombre para reconocer alumnado que ya existe.
+
+`convert` genera `RESUMEN_EXPORTACION.txt` e `IMPORTAR_EN_IDOCEO.txt` en la carpeta de salida. La salida normal de terminal sólo muestra contadores y estados, no nombres, NIA ni rutas locales.
+
+## Reimportar sobre una clase existente
+
+El XLSX generado contiene alumnado y datos personales, no las columnas de evaluación que ya existen en iDoceo. Para incorporar matrículas nuevas a una clase ya creada, se puede volver a importar el XLSX completo y seleccionar la clase existente en el último paso del asistente. iDoceo intenta reconocer al alumnado con el mismo nombre, actualiza sus datos personales y añade los alumnos nuevos.
+
+No se genera por defecto un archivo «sólo nuevos» porque la herramienta no conoce el estado real del cuaderno de iDoceo: un profesor puede haber añadido o editado alumnado manualmente después de la primera importación. Tampoco se interpretan como bajas los alumnos que ya existan en iDoceo pero no estén en el nuevo XLSX; esa revisión debe hacerse en iDoceo.
 
 ## Comandos históricos por formato
 
@@ -72,6 +88,8 @@ itaca-idoceo batch carpeta/ --include-nia --include-repetix --include-materia
 
 `--include-materia` exporta la columna `MATÈRIA` en listados generales y `MÒDUL` en los formatos de FP compatibles.
 
+La opción `--normalize-names` pertenece por ahora al flujo recomendado `convert`; los comandos históricos mantienen su interfaz anterior para no alterar usos existentes.
+
 ## Listados con fotos
 
 Para inspeccionar anónimamente un único listado con fotos:
@@ -95,7 +113,7 @@ itaca-idoceo photo-export listado_con_fotos.pdf \
   -o salida/
 ```
 
-Para el uso habitual con varios listados de materia, es preferible `convert`, ya que analiza las referencias una sola vez y realiza toda la exportación conjuntamente.
+Para el uso habitual con varios listados de materia, es preferible `convert`, ya que analiza las referencias una sola vez, ofrece la normalización opcional de nombres y realiza toda la exportación conjuntamente.
 
 ## Salida de `check`
 
