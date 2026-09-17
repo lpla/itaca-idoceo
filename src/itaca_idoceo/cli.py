@@ -164,22 +164,31 @@ def build_parser() -> argparse.ArgumentParser:
     photo_export.add_argument(
         "--reference-pdf",
         type=Path,
+        action="append",
+        default=[],
+        help=(
+            "PDF tabular ya soportado para enriquecer el alumnado con NIA y "
+            "otros campos. Puede repetirse para aportar varios PDF."
+        ),
+    )
+    photo_export.add_argument(
+        "--reference-folder",
+        type=Path,
         default=None,
         help=(
-            "PDF tabular ya soportado del mismo grupo. Si se indica, el alumnado "
-            "se cruza de forma conservadora, se incluye NIA automáticamente y "
-            "las fotos se nombran por NIA para importarlas por ID en iDoceo."
+            "Carpeta con PDF tabulares de referencia. Se buscan PDF "
+            "recursivamente y se ignoran los formatos no soportados."
         ),
     )
     photo_export.add_argument(
         "--include-repetix",
         action="store_true",
-        help="Incluye REPETIX obtenido del PDF tabular de referencia.",
+        help="Incluye REPETIX obtenido de las referencias tabulares.",
     )
     photo_export.add_argument(
         "--include-materia",
         action="store_true",
-        help="Incluye MATÈRIA/MÒDUL obtenido del PDF tabular de referencia.",
+        help="Incluye MATÈRIA/MÒDUL obtenido de las referencias tabulares.",
     )
 
     return parser
@@ -335,12 +344,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "photo-export":
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
-        if args.reference_pdf is not None and not args.reference_pdf.is_file():
-            parser.error(f"no existe el fichero de referencia: {args.reference_pdf}")
+        references = _collect_reference_pdfs(
+            args.reference_pdf,
+            args.reference_folder,
+            args.pdf,
+            parser,
+        )
         return export_photo_roster_cli(
             args.pdf,
             args.output_dir,
-            reference_pdf=args.reference_pdf,
+            reference_pdfs=references,
             include_repetix=args.include_repetix,
             include_materia=args.include_materia,
         )
