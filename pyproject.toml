@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "itaca-idoceo"
-version = "0.8.0a1"
-description = "Convierte localmente listados PDF de alumnado de ITACA a XLSX preparados para iDoceo"
+version = "0.8.0"
+description = "Convierte localmente listados PDF de alumnado de ITACA a XLSX preparados para importar en iDoceo"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "AGPL-3.0-only"
