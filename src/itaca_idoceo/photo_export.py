@@ -33,6 +33,18 @@ class PhotoExportResult:
     automatic_matches: int
     manual_matches: int
 
+    @property
+    def id_photos_dir(self) -> Path | None:
+        """Carpeta de fotos asociables por NIA, si existe."""
+        return self.photos_dir if self.match_field == "NIA" else None
+
+    @property
+    def name_photos_dir(self) -> Path | None:
+        """Carpeta de fotos cuyo nombre de archivo usa nombre y apellidos."""
+        if self.match_field == "Nombre":
+            return self.photos_dir
+        return self.manual_photos_dir
+
 
 def _unique_directory(path: Path) -> Path:
     if not path.exists():
@@ -101,37 +113,42 @@ def _build_import_guide(
     lines = [
         "ITACA → iDoceo | importación de listado con fotos",
         "",
-        "1. Importa alumnado_idoceo.xlsx en iDoceo con el asistente de importación.",
-        "   Asigna las columnas Apellidos y Nombre a los campos correspondientes.",
+        "Importa alumnado_idoceo.xlsx en iDoceo y asigna Apellidos y Nombre",
+        "a los campos correspondientes.",
     ]
 
     if match_field == "NIA":
         lines.extend(
             [
-                "   Asigna también NIA al campo ID / Student ID.",
-                "   Si alguna fila tiene NIA vacío, déjala sin ID: no se ha inventado ninguno.",
+                "Asigna también NIA al campo ID / Student ID.",
+                "Si alguna fila tiene NIA vacío, déjala sin ID: no se ha inventado ninguno.",
                 "",
-                "2. Abre la clase > Plano de asientos > Herramientas > Fotos > Importación masiva.",
-                "   Selecciona ID como criterio del nombre de archivo y elige la carpeta fotos.",
+                "FOTOS POR NIA",
+                "La carpeta fotos_por_nia contiene únicamente fotografías para las que",
+                "se ha encontrado un NIA inequívoco. Usa el ID/NIA como criterio de",
+                "asociación al realizar la importación masiva de fotografías en iDoceo.",
             ]
         )
         if manual_matches:
             lines.extend(
                 [
                     "",
-                    "3. La carpeta fotos_revision_manual contiene fotografías de alumnos para",
-                    "   los que no se ha encontrado un NIA inequívoco. Asígnalas manualmente.",
+                    "FOTOS POR NOMBRE — COMPROBAR",
+                    "La carpeta fotos_por_nombre contiene fotografías de alumnado actual",
+                    "que no aparece de forma inequívoca en los listados de referencia.",
+                    "Se conservan con nombre y apellidos para poder intentar la asociación",
+                    "por nombre, pero conviene comprobar manualmente el resultado en iDoceo.",
                 ]
             )
     else:
         lines.extend(
             [
                 "",
-                "2. Abre la clase > Plano de asientos > Herramientas > Fotos > Importación masiva.",
-                "   Selecciona Nombre como criterio del nombre de archivo y elige la carpeta fotos.",
-                "   El emparejado por nombre puede fallar con normalizaciones de caracteres.",
-                "   Para máxima precisión, repite la exportación aportando listados tabulares",
-                "   de referencia para cruzar el alumnado y utilizar el NIA como ID.",
+                "FOTOS POR NOMBRE — COMPROBAR",
+                "No se han aportado listados tabulares de referencia con NIA.",
+                "Las fotografías se han guardado en fotos_por_nombre usando nombre y",
+                "apellidos. La asociación por nombre puede fallar por normalizaciones de",
+                "caracteres, así que conviene comprobar el resultado en iDoceo.",
             ]
         )
 
@@ -140,8 +157,8 @@ def _build_import_guide(
             "",
             f"Alumnos enriquecidos desde referencias tabulares: {matched_students}",
             f"Alumnos sin coincidencia inequívoca en las referencias: {unmatched_students}",
-            f"Fotos preparadas para coincidencia automática por {match_field}: {automatic_matches}",
-            f"Fotos que requieren revisión manual: {manual_matches}",
+            f"Fotos preparadas para asociación segura por {match_field}: {automatic_matches}",
+            f"Fotos preparadas por nombre y pendientes de comprobación: {manual_matches}",
             f"Alumnos sin fotografía disponible en el PDF: {missing_photos}",
             "",
             "Los alumnos sin fotografía se incluyen igualmente en el XLSX; simplemente",
@@ -226,7 +243,8 @@ def export_photo_roster(
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    photos_dir = output_dir / "fotos"
+    primary_folder_name = "fotos_por_nia" if match_field == "NIA" else "fotos_por_nombre"
+    photos_dir = output_dir / primary_folder_name
     photos_dir.mkdir(exist_ok=False)
     manual_photos_dir: Path | None = None
 
@@ -250,13 +268,13 @@ def export_photo_roster(
     try:
         if match_field == "NIA":
             automatic_students = []
-            manual_students = []
+            name_students = []
             for student in photo_students:
                 reference = reference_by_ordinal.get(student.ordinal)
                 if reference is not None and reference.nia.strip():
                     automatic_students.append((student, reference.nia.strip()))
                 else:
-                    manual_students.append(student)
+                    name_students.append(student)
 
             nia_counts = Counter(
                 safe_filename_component(nia).casefold()
@@ -273,13 +291,13 @@ def export_photo_roster(
                 automatic_matches += 1
                 photo_count += 1
 
-            if manual_students:
-                manual_photos_dir = output_dir / "fotos_revision_manual"
+            if name_students:
+                manual_photos_dir = output_dir / "fotos_por_nombre"
                 manual_photos_dir.mkdir(exist_ok=False)
-                bases = [_photo_base_name(student.full_name) for student in manual_students]
+                bases = [_photo_base_name(student.full_name) for student in name_students]
                 base_counts = Counter(base.casefold() for base in bases)
                 occurrences: Counter[str] = Counter()
-                for student, base in zip(manual_students, bases):
+                for student, base in zip(name_students, bases):
                     key = base.casefold()
                     occurrences[key] += 1
                     filename = (
@@ -299,6 +317,7 @@ def export_photo_roster(
                 occurrences[key] += 1
                 if base_counts[key] > 1:
                     filename = f"{base}__{occurrences[key]}.png"
+                    # Una colisión de nombres requiere revisión adicional.
                     manual_matches += 1
                 else:
                     filename = f"{base}.png"
@@ -347,16 +366,19 @@ def print_photo_export_result(result: PhotoExportResult) -> None:
         print(f"Alumnos sin NIA en referencias: {result.unmatched_students}")
     print(f"Fotos extraídas: {result.photos}")
     print(f"Sin fotografía en el PDF: {result.missing_photos}")
-    print(f"Criterio de importación de fotos: {result.match_field}")
+    print(f"Criterio principal de fotografías: {result.match_field}")
+    print(f"Fotos asociables por NIA: {result.automatic_matches if result.match_field == 'NIA' else 0}")
     print(
-        f"Coincidencia automática por {result.match_field}: "
-        f"{result.automatic_matches}"
+        "Fotos por nombre pendientes de comprobación: "
+        f"{result.manual_matches if result.match_field == 'NIA' else result.photos}"
     )
-    print(f"Revisión manual: {result.manual_matches}")
     print("Generado: alumnado_idoceo.xlsx")
-    print("Generado: fotos/")
-    if result.manual_photos_dir is not None:
-        print("Generado: fotos_revision_manual/")
+    if result.match_field == "NIA":
+        print("Generado: fotos_por_nia/")
+        if result.manual_photos_dir is not None:
+            print("Generado: fotos_por_nombre/")
+    else:
+        print("Generado: fotos_por_nombre/")
     print("Generado: IMPORTAR_EN_IDOCEO.txt")
 
 
