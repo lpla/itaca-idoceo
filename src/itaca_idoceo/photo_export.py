@@ -9,10 +9,12 @@ import pymupdf
 from .core import (
     ClassResult,
     PageMetadata,
+    PdfResult,
     Student,
     safe_filename_component,
     write_idoceo_xlsx,
 )
+from .photo_reference_cache import match_photo_result_to_parsed_references
 from .photo_reference_pool import match_photo_result_to_references
 from .photo_roster import PhotoRosterResult, detect_photo_roster
 
@@ -187,6 +189,8 @@ def export_photo_roster(
     *,
     reference_pdfs: list[Path] | None = None,
     reference_pdf: Path | None = None,
+    reference_results: list[PdfResult] | None = None,
+    photo_result: PhotoRosterResult | None = None,
     include_repetix: bool = False,
     include_materia: bool = False,
 ) -> PhotoExportResult:
@@ -196,8 +200,12 @@ def export_photo_roster(
     PDF tabulares sólo enriquecen esos alumnos. Una matrícula nueva puede quedar
     sin NIA y seguir exportándose; una coincidencia ambigua, en cambio, detiene la
     exportación para no asignar un identificador incorrecto.
+
+    ``photo_result`` y ``reference_results`` permiten reutilizar el análisis de
+    una selección conjunta para no volver a parsear los mismos PDF por cada
+    materia.
     """
-    result = detect_photo_roster(pdf_path)
+    result = photo_result or detect_photo_roster(pdf_path)
     if not result.is_valid:
         detail = "; ".join(result.issues) if result.issues else "formato no compatible"
         raise RuntimeError(f"No se puede exportar el listado con fotos: {detail}")
@@ -205,6 +213,7 @@ def export_photo_roster(
     references = list(reference_pdfs or [])
     if reference_pdf is not None and reference_pdf not in references:
         references.append(reference_pdf)
+    parsed_references = list(reference_results or [])
 
     reference_by_ordinal: dict[int, Student] = {}
     include_nia = False
@@ -212,8 +221,11 @@ def export_photo_roster(
     matched_students = 0
     unmatched_students = 0
 
-    if references:
-        pool_match = match_photo_result_to_references(result, references)
+    if parsed_references or references:
+        if parsed_references:
+            pool_match = match_photo_result_to_parsed_references(result, parsed_references)
+        else:
+            pool_match = match_photo_result_to_references(result, references)
         if pool_match.usable_files == 0:
             raise RuntimeError(
                 "No se ha encontrado ningún PDF tabular válido entre las referencias."
