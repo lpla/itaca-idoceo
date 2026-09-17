@@ -87,6 +87,51 @@ def test_merge_name_blocks_adds_given_name_from_separate_visual_line():
     assert names[0].line_count == 2
 
 
+def test_merge_name_blocks_accepts_left_aligned_short_continuation_with_far_centers():
+    raw = [
+        _RawTextBlock(
+            block=30,
+            text="Apellidos Extraordinariamente Largos,",
+            x0=120,
+            y0=526,
+            x1=230,
+            y1=532,
+            line_count=1,
+            line_height=6,
+        ),
+        # Mismo borde izquierdo, pero el nombre es tan corto que su centro queda
+        # a más de 44 pt del centro de la línea de apellidos.
+        _RawTextBlock(
+            block=31,
+            text="Ana",
+            x0=120,
+            y0=533,
+            x1=136,
+            y1=539,
+            line_count=1,
+            line_height=6,
+        ),
+        _RawTextBlock(
+            block=32,
+            text="Otro, Nombre",
+            x0=214,
+            y0=526,
+            x1=285,
+            y1=532,
+            line_count=1,
+            line_height=6,
+        ),
+    ]
+
+    names = _merge_name_blocks(raw)
+
+    assert [name.full_name for name in names] == [
+        "Apellidos Extraordinariamente Largos, Ana",
+        "Otro, Nombre",
+    ]
+    assert names[0].line_count == 2
+
+
 def test_merge_name_blocks_can_complete_anchor_that_ends_at_comma():
     raw = [
         _RawTextBlock(
