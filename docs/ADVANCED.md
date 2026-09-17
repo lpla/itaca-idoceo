@@ -2,21 +2,55 @@
 
 Esta documentación no es necesaria para el uso habitual de la aplicación. Está pensada para usuarios con experiencia en terminal y para depurar formatos PDF que todavía no se interpretan correctamente.
 
-## Comandos principales
+## `convert`: flujo recomendado
 
-Comprobar localmente un PDF:
+`convert` acepta simultáneamente archivos y carpetas, recorre las carpetas de forma recursiva y clasifica automáticamente cada PDF como referencia tabular, listado actual con fotos o formato no reconocido.
+
+Una carpeta completa:
+
+```text
+itaca-idoceo convert carpeta_con_todos_los_pdf/
+```
+
+Varios orígenes en una única pasada:
+
+```text
+itaca-idoceo convert referencias/ materia_1.pdf materia_2.pdf -o salida/
+```
+
+Si la selección contiene listados actuales con fotos, éstos determinan las clases que se exportan y todos los PDF tabulares seleccionados se reutilizan como una única piscina de referencias. Los PDF de referencia se analizan una sola vez y se reutilizan para todos los listados de materia.
+
+Si no hay ningún listado actual con fotos, se exportan directamente todos los grupos válidos encontrados en las referencias. En este modo `convert` incluye NIA por defecto; puede desactivarse con:
+
+```text
+itaca-idoceo convert referencias/ --no-nia
+```
+
+Campos opcionales:
+
+```text
+itaca-idoceo convert carpeta/ --include-repetix --include-materia
+```
+
+`convert` genera `RESUMEN_EXPORTACION.txt` en la carpeta de salida. La salida normal de terminal sólo muestra contadores y estados, no nombres, NIA ni rutas locales.
+
+## Comandos históricos por formato
+
+Se mantienen para diagnóstico o usos específicos.
+
+Comprobar localmente un PDF tabular:
 
 ```text
 itaca-idoceo check listado.pdf
 ```
 
-Convertir un PDF:
+Convertir un PDF tabular:
 
 ```text
 itaca-idoceo extract listado.pdf
 ```
 
-Convertir todos los PDF de una carpeta:
+Convertir todos los PDF tabulares de una carpeta:
 
 ```text
 itaca-idoceo batch carpeta/
@@ -28,9 +62,7 @@ Procesar también subcarpetas:
 itaca-idoceo batch carpeta/ --recursive
 ```
 
-## Campos opcionales
-
-Los tres campos adicionales se pueden combinar libremente:
+Los campos adicionales se pueden combinar libremente:
 
 ```text
 itaca-idoceo extract listado.pdf --include-nia
@@ -40,11 +72,38 @@ itaca-idoceo batch carpeta/ --include-nia --include-repetix --include-materia
 
 `--include-materia` exporta la columna `MATÈRIA` en listados generales y `MÒDUL` en los formatos de FP compatibles.
 
+## Listados con fotos
+
+Para inspeccionar anónimamente un único listado con fotos:
+
+```text
+itaca-idoceo photo-check listado_con_fotos.pdf
+```
+
+Cruzar ese listado con una carpeta completa de referencias:
+
+```text
+itaca-idoceo photo-check listado_con_fotos.pdf \
+  --reference-folder referencias/
+```
+
+Exportar únicamente ese listado concreto:
+
+```text
+itaca-idoceo photo-export listado_con_fotos.pdf \
+  --reference-folder referencias/ \
+  -o salida/
+```
+
+Para el uso habitual con varios listados de materia, es preferible `convert`, ya que analiza las referencias una sola vez y realiza toda la exportación conjuntamente.
+
 ## Salida de `check`
 
 `check` es una herramienta de inspección **local**. Puede mostrar metadatos del listado, por lo que **su salida no debe copiarse directamente a una incidencia pública**.
 
-Para soporte general, utiliza primero **Ayuda → Copiar diagnóstico anonimizado** desde la interfaz gráfica.
+`photo-check` está diseñado para mostrar únicamente métricas estructurales y diagnósticos anónimos, pero ante un error inesperado una herramienta de terminal puede incluir una ruta proporcionada por el usuario. No copies errores completos sin revisarlos primero.
+
+Para soporte general, utiliza **Ayuda → Copiar diagnóstico anonimizado** desde la interfaz gráfica.
 
 ## `layout-report`
 
@@ -72,7 +131,7 @@ itaca-idoceo layout-report listado.pdf -o informe.txt
 
 El informe sustituye el contenido sensible por marcadores estructurales y conserva coordenadas útiles para depuración. Aun así, **revísalo antes de compartirlo**.
 
-No compartas nunca el PDF original ni el XLSX generado. Consulta [SECURITY.md](../SECURITY.md) antes de abrir una incidencia.
+No compartas nunca el PDF original, el XLSX generado ni fotografías del alumnado. Consulta [SECURITY.md](../SECURITY.md) antes de abrir una incidencia.
 
 ## Integraciones del sistema
 
