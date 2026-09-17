@@ -71,16 +71,27 @@ def test_mixed_selection_uses_all_references_but_only_exports_photo_rosters(tmp_
     ref_b = tmp_path / "ref_b.pdf"
     photo = tmp_path / "materia.pdf"
     output = tmp_path / "out"
+    ref_a_result = _reference(ref_a)
+    ref_b_result = _reference(ref_b)
+    photo_result = _photo(photo)
     analysis = selection_export.SelectionAnalysis(
         pdfs=[ref_a, ref_b, photo],
-        references={ref_a: _reference(ref_a), ref_b: _reference(ref_b)},
-        photo_rosters={photo: _photo(photo)},
+        references={ref_a: ref_a_result, ref_b: ref_b_result},
+        photo_rosters={photo: photo_result},
     )
 
     calls = []
 
-    def fake_export(pdf_path, output_dir, *, reference_pdfs, include_repetix, include_materia):
-        calls.append((pdf_path, tuple(reference_pdfs)))
+    def fake_export(
+        pdf_path,
+        output_dir,
+        *,
+        reference_results,
+        photo_result,
+        include_repetix,
+        include_materia,
+    ):
+        calls.append((pdf_path, tuple(reference_results), photo_result))
         output_dir.mkdir(parents=True)
         xlsx = output_dir / "alumnado_idoceo.xlsx"
         xlsx.write_bytes(b"xlsx")
@@ -108,7 +119,7 @@ def test_mixed_selection_uses_all_references_but_only_exports_photo_rosters(tmp_
 
     summary = selection_export.export_analyzed_selection(analysis, output)
 
-    assert calls == [(photo, (ref_a, ref_b))]
+    assert calls == [(photo, (ref_a_result, ref_b_result), photo_result)]
     assert summary.mode == "photo"
     assert len(summary.items) == 1
     assert summary.items[0].status == selection_export.STATUS_READY
@@ -127,7 +138,15 @@ def test_photo_selection_with_unmatched_student_is_warning_not_blocking(tmp_path
         photo_rosters={photo: _photo(photo)},
     )
 
-    def fake_export(pdf_path, output_dir, *, reference_pdfs, include_repetix, include_materia):
+    def fake_export(
+        pdf_path,
+        output_dir,
+        *,
+        reference_results,
+        photo_result,
+        include_repetix,
+        include_materia,
+    ):
         output_dir.mkdir(parents=True)
         xlsx = output_dir / "alumnado_idoceo.xlsx"
         xlsx.write_bytes(b"xlsx")
