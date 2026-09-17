@@ -1,19 +1,8 @@
 # Changelog
 
-## Próxima 0.8.0
+## 0.8.0
 
-- Valida de extremo a extremo en iDoceo la creación de clases, importación de alumnado y asociación masiva de fotografías por NIA/ID.
-- Actualiza las instrucciones de importación al flujo actual de iDoceo y genera `IMPORTAR_EN_IDOCEO.txt` en la carpeta general de salida.
-- Documenta la actualización segura de una clase existente: iDoceo puede añadir nuevos alumnos al volver a importar el XLSX completo, conservando el alumnado ya reconocido y sus datos del cuaderno.
-- Aclara que una reimportación no debe interpretarse como sincronización automática de bajas.
-- Añade la opción de presentación **Normalizar nombres** en la GUI y `--normalize-names` en `itaca-idoceo convert`.
-- La normalización se aplica sólo a la salida, nunca al detector ni al matching; conserva Unicode, guiones/apóstrofos, capitalización ya explícita y partículas ibéricas frecuentes como `de`, `del`, `de la`, `da` o `dos`.
-- Mantiene alineados los nombres normalizados del XLSX y los nombres de archivo de `fotos_por_nombre/`.
-- Añade pruebas de regresión para la normalización, la guía de importación y el flujo de sólo referencias.
-
-## 0.8.0a1
-
-- Añade soporte inicial para listados actuales de alumnado con fotografías, incluidos nombres multilínea y casillas «Fotografía no disponible».
+- Añade soporte para listados actuales de alumnado con fotografías, incluidos nombres multilínea y casillas «Fotografía no disponible».
 - Permite seleccionar en una sola pasada todos los PDF de referencia del centro y los listados actuales de las materias impartidas; GUI, Acción rápida y `itaca-idoceo convert` comparten el mismo flujo.
 - Cuando existen listados actuales con fotos, éstos determinan el alumnado final de cada clase; las referencias antiguas sólo enriquecen con NIA, REPETIX y MATÈRIA/MÒDUL y nunca reintroducen alumnado ausente del listado actual.
 - Cruza cada listado actual contra una piscina común de referencias tabulares, con normalización progresiva y coincidencias conservadoras; las identidades ambiguas no se asignan automáticamente.
@@ -24,7 +13,15 @@
 - Reutiliza las referencias ya analizadas para todos los listados actuales de una misma selección, evitando reprocesarlas por cada clase.
 - Nombra las carpetas de salida a partir del `GRUP` extraído del contenido del PDF, no del nombre opaco `verReport_...`. Si hay varios listados actuales del mismo grupo, usa sufijos `__2`, `__3`, etc.; el PDF no contiene el nombre de la materia.
 - Mantiene el modo de sólo referencias: genera un XLSX por grupo usando el nombre de grupo detectado dentro del PDF.
-- Esta alpha está destinada a testers. Aún queda validar en dispositivo la importación real de fotografías por ID/NIA y el fallback por nombre en una versión actual de iDoceo.
+- Añade en la GUI la autoría de Leopoldo Pla Sempere, acceso directo al portfolio, al repositorio y a la creación de incidencias en GitHub.
+- Valida de extremo a extremo en iDoceo la creación de clases, importación de alumnado y asociación masiva de fotografías por NIA/ID.
+- Actualiza las instrucciones de importación al flujo actual de iDoceo y genera `IMPORTAR_EN_IDOCEO.txt` en la carpeta general de salida.
+- Documenta la actualización segura de una clase existente: iDoceo puede añadir nuevos alumnos al volver a importar el XLSX completo, conservando el alumnado ya reconocido y sus datos del cuaderno.
+- Aclara que una reimportación no debe interpretarse como sincronización automática de bajas.
+- Añade la opción de presentación **Normalizar nombres** en la GUI y `--normalize-names` en `itaca-idoceo convert`.
+- La normalización se aplica sólo a la salida, nunca al detector ni al matching; conserva Unicode, guiones/apóstrofos, capitalización ya explícita y partículas ibéricas frecuentes como `de`, `del`, `de la`, `da` o `dos`.
+- Mantiene alineados los nombres normalizados del XLSX y los nombres de archivo de `fotos_por_nombre/`.
+- Añade pruebas de regresión para la normalización, la guía de importación y el flujo de sólo referencias.
 
 ## 0.7.0
 
