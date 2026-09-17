@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0a1
+
+- Añade soporte inicial para listados actuales de alumnado con fotografías, incluidos nombres multilínea y casillas «Fotografía no disponible».
+- Permite seleccionar en una sola pasada todos los PDF de referencia del centro y los listados actuales de las materias impartidas; GUI, Acción rápida y `itaca-idoceo convert` comparten el mismo flujo.
+- Cuando existen listados actuales con fotos, éstos determinan el alumnado final de cada clase; las referencias antiguas sólo enriquecen con NIA, REPETIX y MATÈRIA/MÒDUL y nunca reintroducen alumnado ausente del listado actual.
+- Cruza cada listado actual contra una piscina común de referencias tabulares, con normalización progresiva y coincidencias conservadoras; las identidades ambiguas no se asignan automáticamente.
+- Conserva alumnado actual que no aparezca en las referencias sin inventar NIA. Si tiene foto, la prepara por nombre para comprobación; si no tiene foto, permanece igualmente en el XLSX.
+- Separa fotografías asociables por NIA en `fotos_por_nia/` y fotografías sin NIA en `fotos_por_nombre/`.
+- Distingue estados de usuario entre resultados listos, fotografías ausentes, avisos tolerables y casos que requieren revisión.
+- Corrige la reconstrucción de nombres multilínea en los listados fotográficos y evita confundir continuaciones visuales de MATÈRIA/MÒDUL con continuaciones del nombre en referencias tabulares.
+- Reutiliza las referencias ya analizadas para todos los listados actuales de una misma selección, evitando reprocesarlas por cada clase.
+- Nombra las carpetas de salida a partir del `GRUP` extraído del contenido del PDF, no del nombre opaco `verReport_...`. Si hay varios listados actuales del mismo grupo, usa sufijos `__2`, `__3`, etc.; el PDF no contiene el nombre de la materia.
+- Mantiene el modo de sólo referencias: genera un XLSX por grupo usando el nombre de grupo detectado dentro del PDF.
+- Esta alpha está destinada a testers. Aún queda validar en dispositivo la importación real de fotografías por ID/NIA y el fallback por nombre en una versión actual de iDoceo.
+
 ## 0.7.0
 
 - Primera versión pública sin sufijo alpha; el proyecto pasa a estado de madurez **Beta** en los metadatos de PyPI.
@@ -67,7 +82,7 @@
 - `GRUP` sigue siendo la unidad de salida: las distintas secciones `CURS` del mismo grupo se combinan en un único XLSX para iDoceo.
 - Cada aparición de `CURS` se registra internamente como una sección; los reinicios de `ORDE` se validan por subsecuencia.
 - Una repetición de la cabecera `CURS` por paginación no fuerza una subsecuencia nueva si `ORDE` continúa.
-- Se marca como incidencia un reinicio de `ORDE` en 1 sin una nueva fila `CURS`.
+- Se marca como incidencia un reinicio de `ORDE` en 1 sin una nueva fila CURS.
 - Los detalles locales conservan los distintos valores `CURS` detectados dentro del grupo.
 - Se añaden pruebas con el caso realista `1..21` + `1..11` de Bachillerato.
 
