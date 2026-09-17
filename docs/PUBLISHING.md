@@ -8,7 +8,7 @@ La distribución está publicada en [TestPyPI](https://test.pypi.org/project/ita
 
 ## Antes de publicar una versión
 
-1. Actualizar la versión de forma coherente en `pyproject.toml`, `src/itaca_idoceo/__init__.py` y `SCRIPT_VERSION` en `src/itaca_idoceo/core.py`.
+1. Actualizar la versión de forma coherente en `pyproject.toml` y `src/itaca_idoceo/__init__.py`. El `SCRIPT_VERSION` legado de `core.py`, usado únicamente por el manifiesto del comando `batch`, se sincroniza en tiempo de importación con `__version__`; `tests/test_version.py` verifica que las tres vistas coincidan.
 2. Actualizar `CHANGELOG.md` y cualquier documentación que dependa de esa versión.
 3. Ejecutar, si es posible:
 

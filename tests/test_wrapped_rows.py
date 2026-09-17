@@ -130,3 +130,56 @@ def test_never_crosses_an_unparsed_orde_nia_anchor(monkeypatch):
 
     assert s10.repetix == ""
     assert s12.repetix == ""
+
+
+def test_wrapped_materia_in_name_raw_range_uses_visual_column(monkeypatch):
+    """Regresión: un bloque de MATÈRIA no puede acabar añadido al nombre.
+
+    En el PDF real que motivó este caso, el bloque huérfano tenía raw_f≈0.54,
+    que cae en el rango histórico de nombre, pero visualmente empezaba en la
+    misma X que MATÈRIA. La geometría de la fila ancla debe prevalecer.
+    """
+    s14 = student(31, 14, "ABCD", materia="MATBASE")
+    s15 = student(33, 15, "EFGH")
+
+    row14 = anchor_block(31, 14)
+    name_line = row14[2]
+    materia_anchor = make_line("MAT1 MAT2", 31, 3, 28.0)
+    row14.append(materia_anchor)
+    orphan = make_line("XYZ", 32, 0, 453.6)
+
+    blocks = {
+        31: row14,
+        32: [orphan],
+        33: anchor_block(33, 15),
+    }
+
+    visual_y = {id(orphan): 396.2}
+    monkeypatch.setattr(
+        core,
+        "visual_line_center_y",
+        lambda _page, line: visual_y.get(id(line), 0.0),
+    )
+
+    visual_bounds = {
+        id(name_line): (164.0, 275.0),
+        id(materia_anchor): (374.0, 814.0),
+        id(orphan): (374.0, 388.0),
+    }
+    monkeypatch.setattr(
+        core,
+        "visual_line_bounds",
+        lambda _page, line: visual_bounds.get(id(line), (0.0, 1.0)),
+    )
+
+    core._augment_wrapped_rows(
+        object(),
+        blocks,
+        [s14, s15],
+        {31: 391.4, 33: 406.9},
+        HEIGHT,
+    )
+
+    assert s14.given_names == "ABCD"
+    assert s14.full_name == "PEREZ, ABCD"
+    assert s14.materia == "MATBASE XYZ"

@@ -7,6 +7,14 @@ from pathlib import Path
 from . import __version__
 from .core import batch_extract, check_pdf, extract_one
 from .integrations import install_integration, uninstall_integration
+from .photo_export import export_photo_roster_cli
+from .photo_reference_pool import check_photo_roster_with_references
+from .photo_roster import check_photo_roster
+from .selection_export import (
+    analyze_selection,
+    export_analyzed_selection,
+    print_selection_export_summary,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +33,45 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
 
+    convert = subparsers.add_parser(
+        "convert",
+        help=(
+            "Exporta en una sola pasada una mezcla de referencias y listados "
+            "actuales con fotos."
+        ),
+    )
+    convert.add_argument(
+        "inputs",
+        type=Path,
+        nargs="+",
+        help="Uno o varios PDF y/o carpetas. Las carpetas se recorren recursivamente.",
+    )
+    convert.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Carpeta de salida. Si se omite se crea iDoceo junto a la selección cuando es posible.",
+    )
+    convert.add_argument(
+        "--no-nia",
+        action="store_true",
+        help=(
+            "Sólo en modo de referencias sin listados con fotos: no incluye NIA en el XLSX. "
+            "Cuando hay listados con fotos el NIA se usa automáticamente si está disponible."
+        ),
+    )
+    convert.add_argument(
+        "--include-repetix",
+        action="store_true",
+        help="Incluye REPETIX cuando está disponible en las referencias.",
+    )
+    convert.add_argument(
+        "--include-materia",
+        action="store_true",
+        help="Incluye MATÈRIA/MÒDUL cuando está disponible en las referencias.",
+    )
+
     check = subparsers.add_parser(
         "check",
         help="Comprueba grupo, curso y alumnado sin mostrar nombres ni NIA.",
@@ -36,7 +83,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Convierte un PDF en uno o varios XLSX (uno por grupo).",
     )
     extract.add_argument("pdf", type=Path)
-    extract.add_argument("-o", "--output", type=Path, default=None, help="XLSX de salida si hay una clase; carpeta de salida si hay varias")
+    extract.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="XLSX de salida si hay una clase; carpeta de salida si hay varias",
+    )
     extract.add_argument(
         "--include-nia",
         action="store_true",
@@ -92,10 +145,94 @@ def build_parser() -> argparse.ArgumentParser:
         help="Limita el informe a una o varias filas ORDE (se puede repetir).",
     )
     layout.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=None,
         help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
+    )
+
+    photo_layout = subparsers.add_parser(
+        "photo-layout-report",
+        help="Genera un informe anonimizado de texto e imágenes para listados con fotos.",
+    )
+    photo_layout.add_argument("pdf", type=Path)
+    photo_layout.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="Fichero de texto de salida; si se omite, se imprime por pantalla.",
+    )
+
+    photo_check = subparsers.add_parser(
+        "photo-check",
+        help=(
+            "Comprueba de forma anónima el emparejamiento foto/nombre de un "
+            "listado con fotos."
+        ),
+    )
+    photo_check.add_argument("pdf", type=Path)
+    photo_check.add_argument(
+        "--reference-pdf",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "PDF tabular ya soportado que se usará como referencia. Puede "
+            "repetirse para aportar varios PDF."
+        ),
+    )
+    photo_check.add_argument(
+        "--reference-folder",
+        type=Path,
+        default=None,
+        help=(
+            "Carpeta con PDF de referencia. Se buscan PDF recursivamente y "
+            "se ignoran los que no tengan el formato tabular soportado."
+        ),
+    )
+
+    photo_export = subparsers.add_parser(
+        "photo-export",
+        help="Extrae alumnado y fotos de un listado fotográfico para iDoceo.",
+    )
+    photo_export.add_argument("pdf", type=Path)
+    photo_export.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Carpeta de salida. Si se omite, se crea junto al PDF.",
+    )
+    photo_export.add_argument(
+        "--reference-pdf",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "PDF tabular ya soportado para enriquecer el alumnado con NIA y "
+            "otros campos. Puede repetirse para aportar varios PDF."
+        ),
+    )
+    photo_export.add_argument(
+        "--reference-folder",
+        type=Path,
+        default=None,
+        help=(
+            "Carpeta con PDF tabulares de referencia. Se buscan PDF "
+            "recursivamente y se ignoran los formatos no soportados."
+        ),
+    )
+    photo_export.add_argument(
+        "--include-repetix",
+        action="store_true",
+        help="Incluye REPETIX obtenido de las referencias tabulares.",
+    )
+    photo_export.add_argument(
+        "--include-materia",
+        action="store_true",
+        help="Incluye MATÈRIA/MÒDUL obtenido de las referencias tabulares.",
     )
 
     return parser
@@ -115,11 +252,52 @@ def _launch_gui(paths: list[str] | None = None) -> int:
     return gui_main(paths or [])
 
 
+def _collect_reference_pdfs(
+    explicit: list[Path],
+    folder: Path | None,
+    source_pdf: Path,
+    parser: argparse.ArgumentParser,
+) -> list[Path]:
+    paths: list[Path] = []
+
+    for path in explicit:
+        if not path.is_file():
+            parser.error(f"no existe el fichero de referencia: {path}")
+        paths.append(path.resolve())
+
+    if folder is not None:
+        if not folder.is_dir():
+            parser.error(f"no existe la carpeta de referencias: {folder}")
+        paths.extend(
+            path.resolve()
+            for path in folder.rglob("*.pdf")
+            if path.is_file()
+        )
+
+    source_resolved = source_pdf.resolve()
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        if path == source_resolved or path in seen:
+            continue
+        seen.add(path)
+        unique.append(path)
+    return unique
+
+
+def _default_joint_output(args_inputs: list[Path], analysis) -> Path:
+    if len(args_inputs) == 1 and args_inputs[0].expanduser().is_dir():
+        return args_inputs[0].expanduser() / "iDoceo"
+    parents = {path.parent for path in analysis.pdfs}
+    if len(parents) == 1:
+        return next(iter(parents)) / "iDoceo"
+    return Path.cwd() / "iDoceo"
+
+
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    # Sin argumentos: comportamiento pensado para usuario final.
     if not argv:
         return _launch_gui()
 
@@ -128,6 +306,23 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command is None:
         return _launch_gui()
+
+    if args.command == "convert":
+        analysis = analyze_selection(args.inputs)
+        if not analysis.pdfs:
+            parser.error("no se han encontrado PDF en la selección")
+        if not analysis.references and not analysis.photo_rosters:
+            parser.error("ningún PDF seleccionado tiene un formato soportado")
+        output_dir = args.output_dir or _default_joint_output(args.inputs, analysis)
+        summary = export_analyzed_selection(
+            analysis,
+            output_dir,
+            include_nia_for_reference=not args.no_nia,
+            include_repetix=args.include_repetix,
+            include_materia=args.include_materia,
+        )
+        print_selection_export_summary(summary)
+        return summary.exit_code
 
     if args.command == "check":
         if not args.pdf.is_file():
@@ -178,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pdf.is_file():
             parser.error(f"no existe el fichero: {args.pdf}")
         from .layout_debug import build_layout_report
+
         report = build_layout_report(
             args.pdf,
             only_ordinals=set(args.orde) if args.orde else None,
@@ -186,8 +382,51 @@ def main(argv: list[str] | None = None) -> int:
             print(report, end="")
         else:
             args.output.write_text(report, encoding="utf-8")
-            print(f"Informe anonimizado guardado en: {args.output}")
+            print("Informe anonimizado guardado.")
         return 0
+
+    if args.command == "photo-layout-report":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        from .photo_layout_debug import build_photo_layout_report
+
+        report = build_photo_layout_report(args.pdf)
+        if args.output is None:
+            print(report, end="")
+        else:
+            args.output.write_text(report, encoding="utf-8")
+            print("Informe anonimizado de listado con fotos guardado.")
+        return 0
+
+    if args.command == "photo-check":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        references = _collect_reference_pdfs(
+            args.reference_pdf,
+            args.reference_folder,
+            args.pdf,
+            parser,
+        )
+        if not references:
+            return check_photo_roster(args.pdf)
+        return check_photo_roster_with_references(args.pdf, references)
+
+    if args.command == "photo-export":
+        if not args.pdf.is_file():
+            parser.error(f"no existe el fichero: {args.pdf}")
+        references = _collect_reference_pdfs(
+            args.reference_pdf,
+            args.reference_folder,
+            args.pdf,
+            parser,
+        )
+        return export_photo_roster_cli(
+            args.pdf,
+            args.output_dir,
+            reference_pdfs=references,
+            include_repetix=args.include_repetix,
+            include_materia=args.include_materia,
+        )
 
     parser.error("comando no reconocido")
     return 2

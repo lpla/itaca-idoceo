@@ -442,6 +442,8 @@ def _continuation_parts(
     page,
     lines: list[TextLine],
     height: float,
+    *,
+    materia_start_x: float | None = None,
 ) -> tuple[list[str], str, list[str]]:
     """Clasifica únicamente líneas de un bloque de continuación.
 
@@ -449,6 +451,11 @@ def _continuation_parts(
     cuando una celda hace wrap. No reinterpretamos las filas normales: este
     helper sólo se aplica a bloques *sin* ORDE/NIA situados entre dos bloques
     de alumnado ya detectados por el algoritmo estable.
+
+    Si la fila ancla permite localizar visualmente el inicio de MATÈRIA/MÒDUL,
+    esa geometría tiene prioridad sobre el rango raw histórico. Esto evita que
+    una continuación de materia sea tomada por nombre en PDFs rotados donde el
+    raw_y de un bloque huérfano no conserva la misma relación con la columna.
     """
     name_parts: list[tuple[float, str]] = []
     materia_parts: list[tuple[float, str]] = []
@@ -460,6 +467,12 @@ def _continuation_parts(
             continue
         fraction = line.y0 / height
         visual_y = visual_line_center_y(page, line)
+
+        if materia_start_x is not None and page is not None:
+            visual_x0, _visual_x1 = visual_line_bounds(page, line)
+            if visual_x0 >= materia_start_x - 8.0:
+                materia_parts.append((visual_y, text))
+                continue
 
         if 0.45 <= fraction <= 0.80:
             # Si la primera parte ya permitió detectar al alumno, cualquier
@@ -538,6 +551,29 @@ def _augment_wrapped_rows(
         # del lado de su fila; el suelo de 5 px tolera pequeñas variaciones.
         max_distance = min(12.0, max(5.0, (min(gaps) * 0.45) if gaps else 8.0))
 
+        # La fila principal nos da una guía visual mucho más fiable para separar
+        # COGNOMS I NOM de MATÈRIA/MÒDUL que el raw_y de un bloque huérfano.
+        materia_start_x: float | None = None
+        anchor_lines = blocks.get(student.block, [])
+        if page is not None and anchor_lines:
+            name_result = find_name_line(anchor_lines, height)
+            if name_result is not None:
+                name_line = name_result[0]
+                name_x0, name_x1 = visual_line_bounds(page, name_line)
+                name_center = (name_x0 + name_x1) / 2.0
+                right_column_starts: list[float] = []
+                for anchor_line in anchor_lines:
+                    if anchor_line is name_line or not anchor_line.words:
+                        continue
+                    fraction = anchor_line.y0 / height
+                    if not 0.00 <= fraction < 0.45:
+                        continue
+                    x0, x1 = visual_line_bounds(page, anchor_line)
+                    if (x0 + x1) / 2.0 > name_center:
+                        right_column_starts.append(x0)
+                if right_column_starts:
+                    materia_start_x = min(right_column_starts)
+
         # En los ejemplos reales el bloque de continuación aparece después del
         # bloque principal y antes del siguiente bloque de alumno. Si los ids no
         # son crecientes (PDF exótico), no hacemos ninguna inferencia.
@@ -565,7 +601,12 @@ def _augment_wrapped_rows(
             if abs(block_center - anchor_y) > max_distance:
                 continue
 
-            name_parts, repetix, materia_parts = _continuation_parts(page, lines, height)
+            name_parts, repetix, materia_parts = _continuation_parts(
+                page,
+                lines,
+                height,
+                materia_start_x=materia_start_x,
+            )
             if not name_parts and not repetix and not materia_parts:
                 continue
 
