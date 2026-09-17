@@ -4,6 +4,7 @@ import os
 import platform
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 try:
@@ -30,6 +31,12 @@ from .selection_export import (
     collect_pdf_paths,
     export_analyzed_selection,
 )
+
+
+AUTHOR_NAME = "Leopoldo Pla Sempere"
+PORTFOLIO_URL = "https://lpla.github.io"
+REPOSITORY_URL = "https://github.com/lpla/itaca-idoceo"
+ISSUES_URL = "https://github.com/lpla/itaca-idoceo/issues/new"
 
 
 class ItacaIdoceoApp(tk.Tk):
@@ -213,6 +220,17 @@ class ItacaIdoceoApp(tk.Tk):
         self.convert_button.grid(row=0, column=3, sticky="e")
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._refresh_controls())
 
+        credits = ttk.Frame(outer)
+        credits.pack(fill="x", pady=(8, 0))
+        ttk.Label(credits, text=f"Desarrollado por {AUTHOR_NAME} · ").pack(side="left")
+        portfolio_link = ttk.Label(credits, text="Portfolio", cursor="hand2")
+        portfolio_link.pack(side="left")
+        portfolio_link.bind("<Button-1>", lambda _event: self._open_url(PORTFOLIO_URL))
+        ttk.Label(credits, text=" · ").pack(side="left")
+        github_link = ttk.Label(credits, text="GitHub", cursor="hand2")
+        github_link.pack(side="left")
+        github_link.bind("<Button-1>", lambda _event: self._open_url(REPOSITORY_URL))
+
     def _build_menu(self) -> None:
         menubar = tk.Menu(self)
         file_menu = tk.Menu(menubar, tearoff=False)
@@ -233,8 +251,38 @@ class ItacaIdoceoApp(tk.Tk):
             command=self.copy_anonymized_diagnostic,
         )
         help_menu.add_command(label="Detalles técnicos…", command=self.show_technical_details)
+        help_menu.add_separator()
+        help_menu.add_command(
+            label="Informar de un problema en GitHub…",
+            command=lambda: self._open_url(ISSUES_URL),
+        )
+        help_menu.add_command(
+            label="Proyecto en GitHub…",
+            command=lambda: self._open_url(REPOSITORY_URL),
+        )
+        help_menu.add_command(
+            label=f"Portfolio de {AUTHOR_NAME}…",
+            command=lambda: self._open_url(PORTFOLIO_URL),
+        )
         menubar.add_cascade(label="Ayuda", menu=help_menu)
         self.configure(menu=menubar)
+
+    def _open_url(self, url: str) -> None:
+        try:
+            opened = webbrowser.open(url, new=2)
+        except Exception as exc:
+            messagebox.showerror(
+                "No se ha podido abrir el enlace",
+                f"No se ha podido abrir el navegador.\n\n{exc}",
+                parent=self,
+            )
+            return
+        if not opened:
+            messagebox.showwarning(
+                "No se ha podido abrir el enlace",
+                "El sistema no ha confirmado la apertura del navegador.",
+                parent=self,
+            )
 
     # ---------------------------------------------------------- Entrada/DnD
 
@@ -318,7 +366,10 @@ class ItacaIdoceoApp(tk.Tk):
         for pdf, result in self.analysis.photo_rosters.items():
             photos = sum(page.candidate_photos for page in result.pages)
             missing = sum(page.missing_photos for page in result.pages)
+            group = result.group_code or result.group_raw
             detail = f"Listado actual · {photos} foto(s)"
+            if group:
+                detail = f"{group} · {photos} foto(s)"
             if missing:
                 detail += f" · {missing} sin foto"
             iid = f"photo::{len(self.row_map)}"
@@ -429,6 +480,7 @@ class ItacaIdoceoApp(tk.Tk):
                 "Detalles del listado actual con fotos",
                 (
                     f"PDF: {pdf.name}\n"
+                    f"Grupo: {result.group_code or result.group_raw or 'No detectado'}\n"
                     f"Alumnos: {len(result.students)}\n"
                     f"Fotografías: {photos}\n"
                     f"Sin fotografía: {missing}\n"
@@ -517,6 +569,9 @@ class ItacaIdoceoApp(tk.Tk):
             "Detalles técnicos",
             (
                 f"ITACA → iDoceo {__version__}\n\n"
+                f"Desarrollado por {AUTHOR_NAME}\n"
+                f"Portfolio: {PORTFOLIO_URL}\n"
+                f"Repositorio: {REPOSITORY_URL}\n\n"
                 f"Arrastrar y soltar: {state}\n"
                 f"Python: {platform.python_version()}\n"
                 f"Sistema: {platform.system()} {platform.release()}{detail}"
