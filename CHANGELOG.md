@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.8.0a1
+## 0.8.0
 
-- Añade soporte inicial para listados actuales de alumnado con fotografías, incluidos nombres multilínea y casillas «Fotografía no disponible».
+- Añade soporte para listados actuales de alumnado con fotografías, incluidos nombres multilínea y casillas «Fotografía no disponible».
 - Permite seleccionar en una sola pasada todos los PDF de referencia del centro y los listados actuales de las materias impartidas; GUI, Acción rápida y `itaca-idoceo convert` comparten el mismo flujo.
 - Cuando existen listados actuales con fotos, éstos determinan el alumnado final de cada clase; las referencias antiguas sólo enriquecen con NIA, REPETIX y MATÈRIA/MÒDUL y nunca reintroducen alumnado ausente del listado actual.
 - Cruza cada listado actual contra una piscina común de referencias tabulares, con normalización progresiva y coincidencias conservadoras; las identidades ambiguas no se asignan automáticamente.
@@ -13,7 +13,7 @@
 - Reutiliza las referencias ya analizadas para todos los listados actuales de una misma selección, evitando reprocesarlas por cada clase.
 - Nombra las carpetas de salida a partir del `GRUP` extraído del contenido del PDF, no del nombre opaco `verReport_...`. Si hay varios listados actuales del mismo grupo, usa sufijos `__2`, `__3`, etc.; el PDF no contiene el nombre de la materia.
 - Mantiene el modo de sólo referencias: genera un XLSX por grupo usando el nombre de grupo detectado dentro del PDF.
-- Esta alpha está destinada a testers. Aún queda validar en dispositivo la importación real de fotografías por ID/NIA y el fallback por nombre en una versión actual de iDoceo.
+- Añade en la GUI la autoría de Leopoldo Pla Sempere, acceso directo al portfolio, al repositorio y a la creación de incidencias en GitHub.
 
 ## 0.7.0
 
