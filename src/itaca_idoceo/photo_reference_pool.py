@@ -43,6 +43,26 @@ class UnresolvedDiagnostic:
     given_token_subsequence: bool | None
 
 
+@dataclass(frozen=True)
+class PartialGivenNameDiagnostic:
+    ordinal: int
+    row: int
+    column: int
+    has_photo: bool
+    photo_name_lines: int
+    photo_surname_tokens: int
+    reference_surname_tokens: int
+    photo_given_tokens: int
+    reference_given_tokens: int
+    photo_given_chars: int
+    reference_given_chars: int
+    relation: str
+    given_equal_exact: bool
+    given_equal_structural: bool
+    given_equal_folded: bool
+    given_equal_compact: bool
+
+
 @dataclass
 class ReferencePoolMatch:
     photo_result: PhotoRosterResult
@@ -66,6 +86,71 @@ class ReferencePoolMatch:
             for student in self.photo_result.students
             if student.ordinal not in matched
         ]
+
+    @property
+    def partial_given_name_diagnostics(self) -> list[PartialGivenNameDiagnostic]:
+        """Describe de forma anónima las parejas rescatadas por nombre parcial.
+
+        El objetivo es distinguir una diferencia real entre documentos de un
+        problema de extracción de líneas sin imprimir nombres, NIA, grupos ni
+        rutas. Sólo se muestran conteos y relaciones entre tokens normalizados.
+        """
+        diagnostics: list[PartialGivenNameDiagnostic] = []
+        for link in self.match.links:
+            if link.method != "given_tokens":
+                continue
+
+            photo = link.photo
+            reference = link.reference
+            photo_surname_tokens = _folded_tokens(photo.surnames)
+            reference_surname_tokens = _folded_tokens(reference.surnames)
+            photo_given_tokens = _folded_tokens(photo.given_names)
+            reference_given_tokens = _folded_tokens(reference.given_names)
+
+            if (
+                len(photo_given_tokens) < len(reference_given_tokens)
+                and _is_subsequence(photo_given_tokens, reference_given_tokens)
+            ):
+                relation = "foto_subsecuencia_referencia"
+            elif (
+                len(reference_given_tokens) < len(photo_given_tokens)
+                and _is_subsequence(reference_given_tokens, photo_given_tokens)
+            ):
+                relation = "referencia_subsecuencia_foto"
+            else:
+                relation = "sin_subsecuencia"
+
+            photo_exact = _photo_key(photo, "exact")
+            reference_exact = _reference_key(reference, "exact")
+            photo_structural = _photo_key(photo, "structural")
+            reference_structural = _reference_key(reference, "structural")
+            photo_folded = _photo_key(photo, "folded")
+            reference_folded = _reference_key(reference, "folded")
+            photo_compact = _photo_key(photo, "compact")
+            reference_compact = _reference_key(reference, "compact")
+
+            diagnostics.append(
+                PartialGivenNameDiagnostic(
+                    ordinal=photo.ordinal,
+                    row=photo.row,
+                    column=photo.column,
+                    has_photo=photo.has_photo,
+                    photo_name_lines=photo.name_lines,
+                    photo_surname_tokens=len(photo_surname_tokens),
+                    reference_surname_tokens=len(reference_surname_tokens),
+                    photo_given_tokens=len(photo_given_tokens),
+                    reference_given_tokens=len(reference_given_tokens),
+                    photo_given_chars=len(" ".join(photo_given_tokens)),
+                    reference_given_chars=len(" ".join(reference_given_tokens)),
+                    relation=relation,
+                    given_equal_exact=photo_exact[1] == reference_exact[1],
+                    given_equal_structural=photo_structural[1] == reference_structural[1],
+                    given_equal_folded=photo_folded[1] == reference_folded[1],
+                    given_equal_compact=photo_compact[1] == reference_compact[1],
+                )
+            )
+
+        return diagnostics
 
     @property
     def unresolved_diagnostics(self) -> list[UnresolvedDiagnostic]:
@@ -540,6 +625,29 @@ def print_reference_pool_match(result: ReferencePoolMatch) -> None:
     print(f"Coincidencia fuzzy segura: {counts.get('fuzzy', 0)}")
     print(f"Sin coincidencia: {match.unmatched_photos}")
     print(f"Coincidencias ambiguas: {match.ambiguous_photos}")
+
+    partial_diagnostics = result.partial_given_name_diagnostics
+    if partial_diagnostics:
+        print("Diagnóstico anónimo de coincidencias por nombre parcial:")
+        for item in partial_diagnostics:
+            location = (
+                f"#{item.ordinal} (fila {item.row}, columna {item.column}, "
+                + ("con foto" if item.has_photo else "sin foto")
+                + ")"
+            )
+            equality = (
+                f"exacta={'sí' if item.given_equal_exact else 'no'} "
+                f"signos={'sí' if item.given_equal_structural else 'no'} "
+                f"diacríticos={'sí' if item.given_equal_folded else 'no'} "
+                f"compacta={'sí' if item.given_equal_compact else 'no'}"
+            )
+            print(
+                f"  {location}: lineas_nombre_foto={item.photo_name_lines} "
+                f"tokens_apellidos={item.photo_surname_tokens}/{item.reference_surname_tokens} "
+                f"tokens_nombre={item.photo_given_tokens}/{item.reference_given_tokens} "
+                f"caracteres_nombre={item.photo_given_chars}/{item.reference_given_chars} "
+                f"relacion={item.relation} igualdad_nombre=[{equality}]"
+            )
 
     diagnostics = result.unresolved_diagnostics
     if diagnostics:
