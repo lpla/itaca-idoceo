@@ -43,8 +43,8 @@ class ItacaIdoceoApp(tk.Tk):
         self._enable_drag_and_drop()
 
         self.title(f"ITACA → iDoceo {__version__}")
-        self.geometry("1040x650")
-        self.minsize(860, 520)
+        self.geometry("1080x670")
+        self.minsize(900, 540)
 
         self.input_pdfs: set[Path] = set()
         self.analysis = SelectionAnalysis(pdfs=[])
@@ -56,6 +56,7 @@ class ItacaIdoceoApp(tk.Tk):
         self.include_nia = tk.BooleanVar(value=True)
         self.include_repetix = tk.BooleanVar(value=False)
         self.include_materia = tk.BooleanVar(value=False)
+        self.normalize_names = tk.BooleanVar(value=False)
         self.nia_text = tk.StringVar(value="NIA (ID del estudiante, recomendado)")
         self.status_text = tk.StringVar(value=self._empty_status_text())
 
@@ -102,7 +103,7 @@ class ItacaIdoceoApp(tk.Tk):
                 "La herramienta detecta cada formato y prepara toda la exportación de una vez. "
                 "Todo se procesa localmente en este ordenador."
             ),
-            wraplength=990,
+            wraplength=1030,
         ).pack(anchor="w", pady=(4, 12))
 
         drop_text = (
@@ -152,6 +153,11 @@ class ItacaIdoceoApp(tk.Tk):
             options,
             text="MATÈRIA / MÒDUL",
             variable=self.include_materia,
+        ).pack(side="left", padx=(12, 0))
+        ttk.Checkbutton(
+            options,
+            text="Normalizar nombres",
+            variable=self.normalize_names,
         ).pack(side="left", padx=(12, 0))
 
         tree_frame = ttk.Frame(outer)
@@ -460,7 +466,11 @@ class ItacaIdoceoApp(tk.Tk):
                 "• Un alumno actual que no aparezca en las referencias se conserva sin NIA. "
                 "Si tiene foto, se prepara por nombre y se marca para comprobación.\n"
                 "• Una coincidencia ambigua no se adivina: esa clase queda marcada como "
-                "Revisión necesaria."
+                "Revisión necesaria.\n\n"
+                "La opción Normalizar nombres sólo modifica la presentación de la salida. "
+                "Convierte nombres que vienen completamente en mayúsculas a una capitalización "
+                "más natural y conserva partículas frecuentes como de, del o da. Si vas a "
+                "actualizar después una clase existente en iDoceo, usa siempre el mismo criterio."
             ),
             parent=self,
         )
@@ -497,6 +507,7 @@ class ItacaIdoceoApp(tk.Tk):
                 f"FOTOS={photo_images}",
                 f"SIN_FOTO={missing_images}",
                 f"PDF_OMITIDOS={len(self.analysis.unsupported)}",
+                f"NORMALIZA_NOMBRES={'SI' if self.normalize_names.get() else 'NO'}",
                 "NO CONTIENE rutas, nombres de archivo, grupos, nombres de alumnado ni NIA.",
                 "",
             ]
@@ -549,6 +560,9 @@ class ItacaIdoceoApp(tk.Tk):
         self.last_output_dir = None
         self.open_button.grid_remove()
         self.include_nia.set(True)
+        self.include_repetix.set(False)
+        self.include_materia.set(False)
+        self.normalize_names.set(False)
         self.nia_text.set("NIA (ID del estudiante, recomendado)")
         self.nia_check.configure(state="normal")
         self._refresh_controls()
@@ -583,6 +597,7 @@ class ItacaIdoceoApp(tk.Tk):
                 include_nia_for_reference=self.include_nia.get(),
                 include_repetix=self.include_repetix.get(),
                 include_materia=self.include_materia.get(),
+                normalize_names=self.normalize_names.get(),
             )
         finally:
             self._busy(False)
@@ -602,7 +617,8 @@ class ItacaIdoceoApp(tk.Tk):
                     f"Resultados con avisos: {summary.warning_items}\n"
                     f"Resultados bloqueados: {summary.blocking_items}\n\n"
                     "No se ha adivinado ninguna coincidencia ambigua. "
-                    "Consulta RESUMEN_EXPORTACION.txt en la carpeta de salida."
+                    "Consulta RESUMEN_EXPORTACION.txt e IMPORTAR_EN_IDOCEO.txt "
+                    "en la carpeta de salida."
                 ),
                 parent=self,
             )
@@ -618,7 +634,7 @@ class ItacaIdoceoApp(tk.Tk):
                     f"Con avisos: {summary.warning_items}\n\n"
                     "Los avisos no han impedido la exportación. Pueden corresponder a "
                     "fotografías ausentes o alumnado actual sin NIA en las referencias.\n\n"
-                    "Consulta RESUMEN_EXPORTACION.txt para ver qué ocurrirá con cada clase."
+                    "Consulta RESUMEN_EXPORTACION.txt e IMPORTAR_EN_IDOCEO.txt."
                 ),
                 parent=self,
             )
@@ -630,7 +646,8 @@ class ItacaIdoceoApp(tk.Tk):
                 "Exportación completada",
                 (
                     f"{summary.ready_items} resultado(s) preparados para iDoceo.\n\n"
-                    "Consulta RESUMEN_EXPORTACION.txt en la carpeta de salida."
+                    "Consulta IMPORTAR_EN_IDOCEO.txt para los pasos de importación y "
+                    "actualización de clases existentes."
                 ),
                 parent=self,
             )
