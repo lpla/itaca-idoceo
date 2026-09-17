@@ -84,6 +84,22 @@ class NameBlock:
 
 
 @dataclass(frozen=True)
+class _RawTextBlock:
+    block: int
+    text: str
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    line_count: int
+    line_height: float
+
+    @property
+    def cx(self) -> float:
+        return (self.x0 + self.x1) / 2.0
+
+
+@dataclass(frozen=True)
 class PhotoRosterStudent:
     page: int
     ordinal: int
@@ -172,9 +188,110 @@ def _parse_name_text(text: str) -> tuple[str, str, str] | None:
     return f"{surnames}, {given_names}", surnames, given_names
 
 
+def _continuation_is_name_text(text: str) -> bool:
+    """Acepta sólo continuaciones sin coma formadas por componentes de nombre."""
+    tokens = [token.strip() for token in clean_spaces(text).split(" ") if token.strip()]
+    return bool(tokens) and not any("," in token for token in tokens) and all(
+        is_name_component(token) for token in tokens
+    )
+
+
+def _merge_name_blocks(raw_blocks: list[_RawTextBlock]) -> list[NameBlock]:
+    """Reconstruye nombres que el PDF haya partido en varios bloques de texto.
+
+    Algunos listados dibujan visualmente un único ``APELLIDOS, NOMBRE`` en dos
+    líneas pero guardan la segunda línea como un bloque PDF independiente. La
+    unión se restringe a bloques inmediatamente inferiores y a la misma columna,
+    para no absorber texto del alumno contiguo.
+    """
+    result: list[NameBlock] = []
+    consumed: set[int] = set()
+
+    for anchor in sorted(raw_blocks, key=lambda item: (item.y0, item.x0, item.block)):
+        if anchor.block in consumed or "," not in anchor.text:
+            continue
+
+        merged = [anchor]
+        merged_text = anchor.text
+        best_parsed = _parse_name_text(merged_text)
+        best_blocks = list(merged) if best_parsed is not None else []
+        current_y1 = anchor.y1
+        current_height = anchor.line_height
+
+        for _ in range(2):
+            candidates: list[_RawTextBlock] = []
+            max_gap = max(4.0, min(12.0, current_height * 1.6))
+            for candidate in raw_blocks:
+                if candidate.block == anchor.block or candidate.block in consumed:
+                    continue
+                if candidate in merged or not _continuation_is_name_text(candidate.text):
+                    continue
+                if candidate.y0 < current_y1 - 1.5:
+                    continue
+                if candidate.y0 - current_y1 > max_gap:
+                    continue
+                # En los informes observados las seis columnas están separadas
+                # unos 94 pt; 44 pt mantiene la continuación dentro de su celda.
+                if abs(candidate.cx - anchor.cx) > 44.0:
+                    continue
+                candidates.append(candidate)
+
+            if not candidates:
+                break
+
+            candidates.sort(
+                key=lambda item: (
+                    max(0.0, item.y0 - current_y1),
+                    abs(item.cx - anchor.cx),
+                    item.x0,
+                )
+            )
+            candidate = candidates[0]
+            proposed_text = clean_spaces(f"{merged_text} {candidate.text}")
+            proposed_parsed = _parse_name_text(proposed_text)
+
+            # Si el ancla ya era un nombre completo, sólo incorporamos la línea
+            # siguiente cuando el conjunto sigue siendo un nombre válido. Si el
+            # ancla terminaba en coma, permitimos que la continuación lo complete.
+            if proposed_parsed is None and best_parsed is not None:
+                break
+
+            merged.append(candidate)
+            merged_text = proposed_text
+            current_y1 = max(current_y1, candidate.y1)
+            current_height = max(current_height, candidate.line_height)
+            if proposed_parsed is not None:
+                best_parsed = proposed_parsed
+                best_blocks = list(merged)
+
+        if best_parsed is None:
+            continue
+
+        full_name, surnames, given_names = best_parsed
+        blocks_for_name = best_blocks or [anchor]
+        if len(blocks_for_name) > 1:
+            consumed.update(block.block for block in blocks_for_name[1:])
+
+        result.append(
+            NameBlock(
+                block=anchor.block,
+                x0=min(block.x0 for block in blocks_for_name),
+                y0=min(block.y0 for block in blocks_for_name),
+                x1=max(block.x1 for block in blocks_for_name),
+                y1=max(block.y1 for block in blocks_for_name),
+                full_name=full_name,
+                surnames=surnames,
+                given_names=given_names,
+                line_count=sum(block.line_count for block in blocks_for_name),
+            )
+        )
+
+    return result
+
+
 def _extract_name_blocks(page) -> list[NameBlock]:
     text_dict = page.get_text("dict", sort=False)
-    result: list[NameBlock] = []
+    raw_blocks: list[_RawTextBlock] = []
 
     for block_index, block in enumerate(text_dict.get("blocks", [])):
         if block.get("type") != 0:
@@ -193,26 +310,20 @@ def _extract_name_blocks(page) -> list[NameBlock]:
         if not lines or not rects:
             continue
 
-        parsed = _parse_name_text(" ".join(lines))
-        if parsed is None:
-            continue
-
-        full_name, surnames, given_names = parsed
-        result.append(
-            NameBlock(
+        raw_blocks.append(
+            _RawTextBlock(
                 block=block_index,
+                text=clean_spaces(" ".join(lines)),
                 x0=min(rect.x0 for rect in rects),
                 y0=min(rect.y0 for rect in rects),
                 x1=max(rect.x1 for rect in rects),
                 y1=max(rect.y1 for rect in rects),
-                full_name=full_name,
-                surnames=surnames,
-                given_names=given_names,
                 line_count=len(lines),
+                line_height=float(median(rect.height for rect in rects)),
             )
         )
 
-    return result
+    return _merge_name_blocks(raw_blocks)
 
 
 def _looks_like_portrait_photo(rect: pymupdf.Rect, page) -> bool:
